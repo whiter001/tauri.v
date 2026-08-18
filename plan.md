@@ -1,0 +1,107 @@
+# vtauri — 用 V 语言实现 Tauri（Windows 优先）
+
+> 目标：将 [tauri-apps/tauri](https://github.com/tauri-apps/tauri) 的架构思想用 **V 语言** 重新实现，产出一个
+> 在 **Windows 上可用的桌面应用框架**。本框架命名为 **vtauri**。
+
+## 0. 环境
+
+- V 版本：**0.5.2**（从源码最新编译，`4a8793c`）
+- 交叉编译：Linux 下用 `x86_64-w64-mingw32-gcc` 生成 Windows 的 `PE32+` 可执行文件
+- 命令：`v -os windows -o out.exe src/main.v`
+
+验证结果：Win32 `MessageBoxW` 已能通过 `#flag windows -luser32` + `#include <windows.h>` + `fn C.MessageBoxW` 正常交叉编译。
+
+## 1. Tauri 架构回顾（要翻译/复刻的点）
+
+| Tauri 组件 | 作用 | vtauri 对应实现 |
+|-----------|------|----------------|
+| `tauri` core | 整合运行时、宏、工具、API 的主 crate | `vtauri/app.v` + 各子模块 |
+| `tao` / `winit` | 跨平台窗口创建与管理 | `vtauri/window.v`（Win32 `CreateWindowExW`） |
+| `wry` / `WebView2` | 在窗口内渲染 Web 前端 | `vtauri/webview.v`（WebView2 COM） |
+| IPC / command | 前端 JS ↔ 后端 V 的消息与命令 | `vtauri/ipc.v` + `vtauri/command.v` |
+| `tauri.conf.json` | 编译期应用配置 | `vtauri/config.v`（运行时解析 JSON） |
+| `@tauri-apps/api` | 前端可导入的 JS 接口 | `js/vtauri.js` |
+
+## 2. 分期实施计划
+
+### Phase 1 — 应用与配置骨架 ✅（本次完成）
+- `config.v`：解析 `vtauri.conf.json`（`productName`、`identifier`、`mainWindow`、`version` 等）。
+- `app.v`：`App` 结构体，持有配置、窗口、webview、命令注册表。
+- `main.v` 入口：读取配置 → 创建 `App` → 启动。
+
+### Phase 2 — Win32 窗口系统 ✅（本次完成）
+- `window.v`：封装 Win32 `RegisterClassExW` / `CreateWindowExW`。
+- 注册窗口类、窗口过程（`WndProc`），处理 `WM_DESTROY` 等消息。
+- 消息循环（`GetMessageW` / `DispatchMessageW`）。
+- 支持设置标题、尺寸、居中。
+
+### Phase 3 — WebView2 集成（框架代码，Windows 运行时验证）
+- `webview.v`：通过 COM 初始化 `ICoreWebView2Environment`，创建 `ICoreWebView2Controller` 并嵌入窗口。
+- 提供 `load_url` / `load_html` / `execute_js`。
+- 说明：COM 接口在 Linux 交叉编译下无法运行验证，故本次提供绑定与调用骨架，留 Windows 上联调。
+
+### Phase 4 — IPC 消息传递与 command 命令系统（本次完成框架）
+- `ipc.v`：定义前端→后端消息协议（`invoke(command, args)` / 回调）。
+- `command.v`：命令注册表，`app.register_command('greet', fn)`；通过 `webview.post_message` 回传结果。
+
+### Phase 5 — 前端 JS API（本次完成）
+- `js/vtauri.js`：`window.__VTauri.invoke(...)`，实现类似 `@tauri-apps/api` 的 `invoke`、`listen`。
+
+### Phase 6 — 示例 + 打包（本次完成示例）
+- `examples/hello`：一个最小可运行示例（Win32 原生窗口 + JS API 绑定）。
+- `tauri-bundler` 的 V 简化版：将前端资源嵌入二进制（`$embed_file`）。
+
+## 3. 关键技术点（V 实现细节）
+
+### 3.1 调用 Win32 API
+```v
+#flag windows -luser32
+#include <windows.h>
+
+fn C.CreateWindowExW(ext_style u32, class &u16, name &u16, style u32, x i32, y i32, w i32, h i32,
+	parent voidptr, menu voidptr, instance voidptr, param voidptr) voidptr
+```
+要点：用 `&u16`（宽字符）传字符串（`str.to_wide()`）；对无返回值的 API 用 `voidptr`。
+
+### 3.2 跨平台编译（Windows 分支）
+用 `$if windows { }` 条件编译 + `$else { }` 兜底，保证在 Linux 上仍可编译测试。
+
+### 3.3 WebView2 绑定难点
+WebView2 是 COM 接口，V 中需手动声明 `IUnknown` / `ICoreWebView2*` vtable 布局并 `fnptr` 调用。
+完整实现依赖 Windows 运行时联调。
+
+## 4. 目录结构
+
+```
+vtauri/
+  config.v     # 配置系统
+  window.v     # Win32 窗口
+  webview.v    # WebView2（骨架）
+  ipc.v        # IPC 协议
+  command.v    # 命令系统
+  app.v        # App 主类
+js/
+  vtauri.js    # 前端 API
+examples/
+  hello/
+    main.v
+    vtauri.conf.json
+    index.html
+tests/
+  config_test.v
+```
+
+## 5. 完成标准
+
+- [x] 配置解析：读取 `vtauri.conf.json` 并生成 `AppConfig`
+- [x] Win32 窗口：创建窗口 + 消息循环（可交叉编译为 `.exe`）
+- [x] 命令系统：注册与调用命令
+- [x] JS API：前端 `invoke`
+- [x] 示例：`examples/hello` 可交叉编译
+- [ ] WebView2 真机渲染（需 Windows 运行时验证）
+
+## 6. 后续路线（超出本次范围）
+- 系统托盘、原生菜单、通知
+- 跨平台（Linux / macOS / 移动端）后端
+- 应用打包器（`.msi` / NSIS `.exe` 安装包）
+- 前端资源打包与自更新

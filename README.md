@@ -38,11 +38,17 @@ v -os windows -o hello.exe main.v
 # 生成 PE32+ x86-64 hello.exe
 ```
 
-### 3. 在 Linux 上验证核心逻辑（窗口为桩）
+### 3. 在 Linux 上运行示例（窗口为桩，验证核心逻辑）
 
 ```bash
-VMODULES=/workspace v -o demo demo.v && ./demo
+cd examples/hello
+v run main.v
+# 输出：vtauri example "vtauri-hello" v0.1.0 starting...
 ```
+
+## 使用方案
+
+完整的创建应用、注册命令、前后端通信、编译打包指南，见 [docs/usage.md](docs/usage.md)。
 
 ## 示例（examples/hello/main.v）
 

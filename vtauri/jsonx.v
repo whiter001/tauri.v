@@ -11,5 +11,5 @@ pub fn encode[T](val T) string {
 
 // decode 从 JSON 字符串解码为目标类型 T。
 pub fn decode[T](data string) !T {
-	return json.decode[T](data)
+	return json.decode(T, data)
 }

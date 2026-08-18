@@ -32,7 +32,7 @@ fn test_app_handle_ipc_success() {
 		args:    '21'
 	}
 	resp_json := app.handle_ipc(encode_request(req))
-	resp := json.decode[IpcResponse](resp_json) or { panic(err) }
+	resp := json.decode(IpcResponse, resp_json) or { panic(err) }
 	assert resp.id == 'abc'
 	assert resp.ok == true
 	assert decode[int](resp.result)! == 42
@@ -46,7 +46,7 @@ fn test_app_handle_ipc_missing_command() {
 		args:    ''
 	}
 	resp_json := app.handle_ipc(encode_request(req))
-	resp := json.decode[IpcResponse](resp_json) or { panic(err) }
+	resp := json.decode(IpcResponse, resp_json) or { panic(err) }
 	assert resp.id == 'def'
 	assert resp.ok == false
 	assert resp.error.contains('not found')
@@ -56,7 +56,7 @@ fn test_app_handle_ipc_bad_request() {
 	mut app := new_app(default_config())
 	// 传入非法的 JSON 请求串，应返回错误响应
 	resp_json := app.handle_ipc('not-json{')
-	resp := json.decode[IpcResponse](resp_json) or { panic(err) }
+	resp := json.decode(IpcResponse, resp_json) or { panic(err) }
 	assert resp.ok == false
 	assert resp.error.contains('bad request')
 }

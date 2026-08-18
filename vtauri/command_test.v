@@ -31,3 +31,11 @@ fn test_make_string_command() {
 	res := h('v') or { panic(err) }
 	assert decode[string](res)! == 'hi:v'
 }
+
+fn test_emit_command_registered() {
+	// 前端 emit() 发送的 __emit 命令必须被内置注册，避免 command not found
+	reg := new_command_registry()
+	assert reg.has('__emit')
+	res := reg.invoke('__emit', '{"event":"ping","payload":null}') or { panic(err) }
+	assert res.contains('ok')
+}

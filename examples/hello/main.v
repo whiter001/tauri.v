@@ -46,7 +46,7 @@ struct AddArgs {
 }
 
 fn vtauri_decode_add(args string) ![]int {
-	a := json.decode[AddArgs](args)!
+	a := json.decode(AddArgs, args) or { return err }
 	return [a.a, a.b]
 }
 

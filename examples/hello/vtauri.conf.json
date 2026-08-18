@@ -1,0 +1,16 @@
+{
+  "productName": "vtauri-hello",
+  "identifier": "com.vlang.vtauri.hello",
+  "version": "0.1.0",
+  "app": {
+    "windows": [
+      {
+        "title": "vtauri hello",
+        "width": 800,
+        "height": 600,
+        "center": true,
+        "resizable": true
+      }
+    ]
+  }
+}

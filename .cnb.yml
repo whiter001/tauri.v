@@ -2,7 +2,7 @@ main:
   pull_request:
     - name: verify
       docker:
-        image: vlang/v:latest
+        image: thevlang/vlang:latest
       stages:
         - name: test
           script: |
@@ -25,7 +25,7 @@ main:
   push:
     - name: verify
       docker:
-        image: vlang/v:latest
+        image: thevlang/vlang:latest
       stages:
         - name: test
           script: |

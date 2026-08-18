@@ -1,7 +1,6 @@
 // ipc_test.v — IPC 协议测试
 module vtauri
 
-import json2
 
 fn test_ipc_roundtrip() {
 	req := IpcRequest{

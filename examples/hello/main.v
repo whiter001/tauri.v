@@ -4,7 +4,7 @@
 module main
 
 import vtauri
-import json2.decoder2
+import json
 
 fn main() {
 	// 1. 读取配置
@@ -46,7 +46,7 @@ struct AddArgs {
 }
 
 fn vtauri_decode_add(args string) ![]int {
-	a := decoder2.decode[AddArgs](args)!
+	a := json.decode[AddArgs](args)!
 	return [a.a, a.b]
 }
 

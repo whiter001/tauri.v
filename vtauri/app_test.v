@@ -92,7 +92,9 @@ fn test_inline_asset_head_fallback() {
 	out := inline_asset(html, 'var x = 1;')
 	// 找不到 script 占位时，插入到 </head> 之前
 	assert out.contains('<script>')
-	assert out.index('var x = 1;') < out.index('</head>')
+	script_pos := out.index('var x = 1;') or { panic('script not found') }
+	head_pos := out.index('</head>') or { panic('</head> not found') }
+	assert script_pos < head_pos
 }
 
 fn test_inline_asset_no_head() {

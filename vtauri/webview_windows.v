@@ -13,9 +13,14 @@ module vtauri
 import json2
 
 #flag windows -I @VMODROOT/native
-#flag windows @VMODROOT/native/webview_bridge.o
-#flag windows -lstdc++
 #flag windows -lole32 -lshell32 -lshlwapi -luser32 -lversion
+$if msvc {
+	#flag windows @VMODROOT/native/webview_bridge.obj
+} $else {
+	#flag windows -Wno-incompatible-pointer-types
+	#flag windows @VMODROOT/native/webview_bridge.o
+	#flag windows -lstdc++
+}
 #include "vtauri_webview.h"
 
 // --- 桥接层 C 函数声明 ---
@@ -29,6 +34,7 @@ fn C.vtauri_wv_bind(w voidptr, name &char, cb fn (&char, &char, voidptr), userda
 fn C.vtauri_wv_return(w voidptr, id &char, status int, result &char) int
 
 // COM 初始化（WebView2 要求在创建前以 apartment-threaded 模式初始化 COM）
+@[c_extern]
 fn C.CoInitializeEx(pv_reserved voidptr, dw_co_init u32) int
 
 const coinit_apartmentthreaded = u32(0x2) // COINIT_APARTMENTTHREADED
@@ -54,6 +60,7 @@ fn (mut wv WebView) attach_windows() ! {
 	}
 	wv.native = w
 	wv.initialized = true
+	resize_webview_widget_windows(hwnd)
 }
 
 // load_html_windows 渲染一段 HTML 字符串。
@@ -103,8 +110,7 @@ fn (mut wv WebView) bind_invoke_windows(app &App) ! {
 		ctx.app = app
 	}
 	wv.bind_ctx = ctx
-	err := C.vtauri_wv_bind(wv.native, &char('__vtauriInvoke'.str), vtauri_on_invoke,
-		voidptr(ctx))
+	err := C.vtauri_wv_bind(wv.native, &char(c'__vtauriInvoke'), vtauri_on_invoke, voidptr(ctx))
 	if err != 0 {
 		unsafe { free(wv.bind_ctx) }
 		wv.bind_ctx = unsafe { nil }

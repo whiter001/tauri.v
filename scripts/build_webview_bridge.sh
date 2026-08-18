@@ -13,7 +13,28 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-CXX="${CXX:-g++}"
+CXX="${CXX:-}"
+if [ -z "${CXX}" ]; then
+  if command -v g++ >/dev/null 2>&1; then
+    CXX="g++"
+  else
+    UNAME_S="$(uname -s | tr '[:upper:]' '[:lower:]')"
+    case "${UNAME_S}" in
+      mingw*|msys*|cygwin*)
+        echo "error: no usable C++ compiler found; install g++/MinGW-w64 or set CXX" >&2
+        exit 1
+        ;;
+      *)
+        if command -v clang++ >/dev/null 2>&1; then
+          CXX="clang++"
+        else
+          echo "error: no usable C++ compiler found; install g++/MinGW-w64 or set CXX" >&2
+          exit 1
+        fi
+        ;;
+    esac
+  fi
+fi
 NATIVE_DIR="native"
 OUT="${NATIVE_DIR}/webview_bridge.o"
 

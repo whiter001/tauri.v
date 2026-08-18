@@ -5,6 +5,8 @@
 //   bash ../../scripts/build_hello_windows.sh
 //   等效于：先 sh ../../scripts/build_webview_bridge.sh（g++ 编译 C++ 桥），
 //          再 v -os windows -o hello.exe main.v
+// Windows 本机 MSVC：
+//   powershell -ExecutionPolicy Bypass -File ../../scripts/build_hello_msvc.ps1 -Run
 
 module main
 
@@ -12,10 +14,8 @@ import vtauri
 import json2
 
 // 内嵌前端资源：入口 HTML 与 vtauri.js（编译期嵌入到可执行文件）。
-const (
-	index_html = $embed_file('index.html')
-	vtauri_js  = $embed_file('../../js/vtauri.js')
-)
+const index_html = $embed_file('index.html')
+const vtauri_js = $embed_file('../../js/vtauri.js')
 
 fn main() {
 	// 1. 读取配置

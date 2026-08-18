@@ -2,7 +2,11 @@
 examples/hello/hello
 examples/hello/hello.exe
 *.exe
+*.obj
 
 # 本地测试临时文件
 *.o
 *.test
+
+# playwright-mcp 调试产物
+.playwright-mcp/

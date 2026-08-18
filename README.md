@@ -32,6 +32,12 @@
 v test vtauri
 ```
 
+Windows 本机建议使用 MSVC：
+
+```powershell
+v -cc msvc test vtauri
+```
+
 ### 2. 交叉编译示例为 Windows 可执行文件
 
 ```bash
@@ -39,6 +45,12 @@ bash scripts/build_hello_windows.sh
 # ① 用 MinGW g++ 编译 native/webview_bridge.cc（C++ 桥）
 # ② 用 V 交叉编译 examples/hello 为 hello.exe
 # 生成 PE32+ x86-64 hello.exe
+```
+
+如果是在 Windows 本机使用 MSVC：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/build_hello_msvc.ps1 -Run
 ```
 
 ### 3. 在 Linux 上运行示例（窗口为桩，验证核心逻辑）

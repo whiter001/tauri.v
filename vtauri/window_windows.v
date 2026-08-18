@@ -41,6 +41,13 @@ struct C.MSG {
 	pt_y    int
 }
 
+struct C.RECT {
+	left   int
+	top    int
+	right  int
+	bottom int
+}
+
 // --- 常量 ---
 const wnd_class_name = 'vtauri_window'
 // 窗口样式
@@ -53,12 +60,14 @@ const sm_cxscreen = 0
 const sm_cyscreen = 1
 // 消息
 const wm_destroy = u32(0x0002)
+const wm_size = u32(0x0005)
 const wm_close = u32(0x0010)
 // 光标
 const idc_arrow = usize(32512) // MAKEINTRESOURCE(IDC_ARROW)
 
 // 显示方式
 const sw_show = 5
+const webview_widget_class_name = 'webview_widget'
 
 // --- 函数声明 ---
 fn C.GetModuleHandleW(lp_module_name &u16) voidptr
@@ -75,7 +84,10 @@ fn C.TranslateMessage(lp_msg &C.MSG) i32
 fn C.DispatchMessageW(lp_msg &C.MSG) isize
 fn C.PostQuitMessage(n_exit_code i32)
 fn C.GetSystemMetrics(n_index i32) i32
-fn C.LoadCursorW(h_instance voidptr, lp_cursor_name usize) voidptr
+fn C.LoadCursorW(h_instance voidptr, lp_cursor_name &u16) voidptr
+fn C.GetClientRect(h_wnd voidptr, lp_rect &C.RECT) int
+fn C.FindWindowExW(h_wnd_parent voidptr, h_wnd_child_after voidptr, lpsz_class &u16, lpsz_window &u16) voidptr
+fn C.MoveWindow(h_wnd voidptr, x int, y int, width int, height int, repaint int) int
 
 // --- 实现 ---
 
@@ -90,7 +102,7 @@ fn new_window_windows(title string, width int, height int, center bool) !Window 
 		style:           cs_hredraw | cs_vredraw
 		lpfn_wnd_proc:   wnd_proc_windows
 		h_instance:      hinstance
-		h_cursor:        C.LoadCursorW(unsafe { nil }, idc_arrow)
+		h_cursor:        C.LoadCursorW(unsafe { nil }, unsafe { &u16(voidptr(idc_arrow)) })
 		lpsz_class_name: unsafe { &class_name_wide[0] }
 	}
 	C.RegisterClassExW(&wndclass)
@@ -140,6 +152,10 @@ fn (mut w Window) destroy_windows() {
 
 // wnd_proc_windows 是 Win32 窗口过程。
 fn wnd_proc_windows(hwnd voidptr, msg u32, w_param usize, l_param isize) isize {
+	if msg == wm_size {
+		resize_webview_widget_windows(hwnd)
+		return 0
+	}
 	if msg == wm_destroy {
 		C.PostQuitMessage(0)
 		return 0
@@ -149,4 +165,20 @@ fn wnd_proc_windows(hwnd voidptr, msg u32, w_param usize, l_param isize) isize {
 		return 0
 	}
 	return C.DefWindowProcW(hwnd, msg, w_param, l_param)
+}
+
+fn resize_webview_widget_windows(parent voidptr) {
+	if isnil(parent) {
+		return
+	}
+	class_name := webview_widget_class_name.to_wide()
+	widget := C.FindWindowExW(parent, unsafe { nil }, unsafe { &class_name[0] }, unsafe { nil })
+	if isnil(widget) {
+		return
+	}
+	mut rect := C.RECT{}
+	if C.GetClientRect(parent, &rect) == 0 {
+		return
+	}
+	C.MoveWindow(widget, rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top, 1)
 }

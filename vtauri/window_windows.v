@@ -91,7 +91,7 @@ fn new_window_windows(title string, width int, height int, center bool) !Window 
 		lpfn_wnd_proc:   wnd_proc_windows
 		h_instance:      hinstance
 		h_cursor:        C.LoadCursorW(unsafe { nil }, idc_arrow)
-		lpsz_class_name: &u16(class_name_wide[0])
+		lpsz_class_name: unsafe { &class_name_wide[0] }
 	}
 	C.RegisterClassExW(&wndclass)
 

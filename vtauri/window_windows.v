@@ -82,13 +82,16 @@ fn C.LoadCursorW(h_instance voidptr, lp_cursor_name usize) voidptr
 // new_window_windows 创建并显示一个原生 Win32 窗口。
 fn new_window_windows(title string, width int, height int, center bool) !Window {
 	hinstance := C.GetModuleHandleW(0)
+	// to_wide() 返回临时数组，直接取地址会随语句结束被释放（悬垂指针）。
+	// 必须在函数作用域内持有该数组，使其生命周期覆盖到 RegisterClassExW 调用之后。
+	class_name_wide := wnd_class_name.to_wide()
 	wndclass := C.WNDCLASSEXW{
 		cb_size:         u32(sizeof(C.WNDCLASSEXW))
 		style:           cs_hredraw | cs_vredraw
 		lpfn_wnd_proc:   wnd_proc_windows
 		h_instance:      hinstance
 		h_cursor:        C.LoadCursorW(unsafe { nil }, idc_arrow)
-		lpsz_class_name: &u16(wnd_class_name.to_wide())
+		lpsz_class_name: &u16(class_name_wide[0])
 	}
 	C.RegisterClassExW(&wndclass)
 

@@ -55,7 +55,12 @@ pub fn (mut app App) handle_ipc(request_json string) string {
 }
 
 // emit 向后端向前端广播一个事件。
+// 注意：WebView 尚未完成初始化时（骨架阶段 WebView2 未就绪），emit 无法投递事件，
+// 这里显式返回错误提示，避免在 post_message 内部产生模糊的“webview not initialized”。
 pub fn (mut app App) emit(event_name string, payload string) ! {
+	if !app.webview.initialized {
+		return error('emit failed: webview not initialized (WebView2 尚未就绪，事件广播待实现)')
+	}
 	ev := IpcEvent{
 		event:   event_name
 		payload: payload

@@ -52,12 +52,12 @@ pub fn load_config(path string) !AppConfig {
 	data := os.read_file(path) or { return error('cannot read config file: ${path}') }
 	raw := decode[RawConfig](data) or { return error('invalid config JSON: ${err}') }
 
-	// 取第一个窗口作为主窗口；缺省时给默认值
+	// 取第一个窗口作为主窗口；缺省时给默认值（与 default_config 保持一致）
 	mut wt := ''
 	mut ww := f64(0)
 	mut wh := f64(0)
-	mut wc := false
-	mut wr := false
+	mut wc := true  // 默认居中，与 default_config 一致
+	mut wr := true  // 默认可调整大小，与 default_config 一致
 	if raw.app.windows.len > 0 {
 		w := raw.app.windows[0]
 		wt = w.title

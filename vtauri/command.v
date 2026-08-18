@@ -39,6 +39,13 @@ pub fn make_string_command(f fn (string) string) CommandHandler {
 }
 
 // 使 CommandRegistry 可跨模块组合进 App。
+// 内置注册一个 __emit 命令，接收前端 emit() 发送的事件通知（骨架阶段仅确认接收，
+// 事件广播的实际投递待 WebView2 就绪后实现）。
 pub fn new_command_registry() CommandRegistry {
-	return CommandRegistry{}
+	mut reg := CommandRegistry{}
+	reg.register('__emit', fn (args string) !string {
+		// 骨架阶段：前端 emit 的事件通知仅确认收到，不做额外分发
+		return '{"ok":true}'
+	})
+	return reg
 }

@@ -4,7 +4,6 @@
 module main
 
 import vtauri
-import json2
 import json2.decoder2
 
 fn main() {
@@ -22,7 +21,7 @@ fn main() {
 		return 'Hello, ${name}! Greetings from the V backend.'
 	}))
 
-	// 4. 注册命令：add 两数相加（返回 JSON 数字）
+	// 4. 注册命令：add 两数相加（返回字符串结果，与 greet 的字符串语义保持一致）
 	app.register_command('add', fn (args string) !string {
 		nums := vtauri_decode_add(args)!
 		return vtauri_encode_sum(nums)
@@ -52,5 +51,6 @@ fn vtauri_decode_add(args string) ![]int {
 }
 
 fn vtauri_encode_sum(nums []int) string {
-	return json2.encode(nums[0] + nums[1], json2.EncoderOptions{})
+	// 返回纯文本数字（而非 JSON 编码），保证前端 invoke 直接 resolve 得到可用的结果字符串
+	return '${nums[0] + nums[1]}'
 }

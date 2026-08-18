@@ -36,4 +36,23 @@ fn test_default_config() {
 	assert cfg.product_name == 'vtauri-app'
 	assert cfg.main_window.width == 800
 	assert cfg.main_window.height == 600
+	assert cfg.main_window.center == true
+	assert cfg.main_window.resizable == true
+}
+
+fn test_load_config_defaults_match() {
+	// 窗口缺失时，load_config 的默认值应与 default_config 保持一致
+	dir := os.temp_dir()
+	cfg_path := os.join_path(dir, 'vtauri_test_defaults.conf.json')
+	os.write_file(cfg_path,
+		'{"productName":"d","identifier":"com.d","version":"0.0.1","app":{}}') or {
+		panic(err)
+	}
+
+	cfg := load_config(cfg_path) or { panic(err) }
+	default := default_config()
+	assert cfg.main_window.center == default.main_window.center
+	assert cfg.main_window.resizable == default.main_window.resizable
+
+	os.rm(cfg_path) or {}
 }

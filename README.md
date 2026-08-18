@@ -10,17 +10,19 @@
 |------|------|------|------|
 | 配置系统 | `vtauri/config.v` | 解析 `vtauri.conf.json` | ✅ |
 | 窗口系统 | `vtauri/window.v` / `window_windows.v` | Win32 `CreateWindowExW` + 消息循环 | ✅ |
-| WebView 渲染 | `vtauri/webview.v` | WebView2 绑定骨架 | 🚧（需 Windows 真机联调） |
+| WebView 渲染 | `vtauri/webview.v` + `webview_windows.v` | 集成 webview/webview（封装 WebView2） | ✅（需 Windows 真机联调） |
 | IPC 协议 | `vtauri/ipc.v` | 前端 ↔ 后端消息编解码 | ✅ |
 | 命令系统 | `vtauri/command.v` | 命令注册与分发 | ✅ |
 | 应用主类 | `vtauri/app.v` | 整合各组件 | ✅ |
 | 前端 API | `js/vtauri.js` | `invoke` / `listen` / `emit` | ✅ |
 | 示例 | `examples/hello` | 最小可运行应用 | ✅（可交叉编译 `.exe`） |
+| C++ 桥 | `native/webview_bridge.cc` | 把 webview 库暴露为稳定 C 接口 | ✅（需 g++ 编译） |
 
 ## 环境
 
 - V 0.5.2（`4a8793c`，从源码最新编译）
-- Windows 交叉编译：`x86_64-w64-mingw32-gcc`
+- Windows 交叉编译：`x86_64-w64-mingw32-g++`（MinGW-w64，含 C++ 编译器）
+- 目标机需安装 [WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/)（Win10/11 通常已内置）
 
 ## 快速开始
 
@@ -33,8 +35,9 @@ v test vtauri
 ### 2. 交叉编译示例为 Windows 可执行文件
 
 ```bash
-cd examples/hello
-v -os windows -o hello.exe main.v
+bash scripts/build_hello_windows.sh
+# ① 用 MinGW g++ 编译 native/webview_bridge.cc（C++ 桥）
+# ② 用 V 交叉编译 examples/hello 为 hello.exe
 # 生成 PE32+ x86-64 hello.exe
 ```
 
@@ -69,6 +72,9 @@ fn main() {
 }
 ```
 
+> 完整示例还会内嵌 `index.html` 与 `js/vtauri.js` 并通过 `app.load_html(...)` 渲染，
+> 详见 `examples/hello/main.v`。
+
 前端通过 `js/vtauri.js` 调用：
 
 ```js
@@ -81,7 +87,7 @@ const result = await window.__VTauri.invoke('greet', 'whiter');
 |-----------|------------|
 | `tauri` core | `vtauri/app.v` |
 | `tao` / `winit` | `vtauri/window.v` |
-| `wry` / `WebView2` | `vtauri/webview.v` |
+| `wry` / `WebView2` | `vtauri/webview.v` + `webview_windows.v` + `native/webview_bridge.cc` |
 | IPC / command | `vtauri/ipc.v` + `command.v` |
 | `tauri.conf.json` | `vtauri/config.v` |
 | `@tauri-apps/api` | `js/vtauri.js` |
@@ -93,7 +99,8 @@ const result = await window.__VTauri.invoke('greet', 'whiter');
 - [x] Phase 3：IPC 与命令系统
 - [x] Phase 4：前端 JS API
 - [x] Phase 5：示例 + Windows 交叉编译
-- [ ] WebView2 真机渲染（需 Windows 运行时验证）
+- [x] Phase 6：WebView 渲染（集成 webview/webview 库，`set_html` 渲染）
+- [ ] WebView2 真机渲染验证（需 Windows 主机 + WebView2 运行时）
 - [ ] 系统托盘、原生菜单、通知
 - [ ] 跨平台（Linux / macOS）
 - [ ] 应用打包器（NSIS / MSI）

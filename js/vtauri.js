@@ -1,7 +1,10 @@
 /**
  * vtauri.js — 前端 JS API
- * 对应 Tauri 的 @tauri-apps/api 包。提供 invoke / listen / emit 等接口，
- * 通过宿主（WebView2 / window.chrome.webview）与 V 后端通信。
+ * 对应 Tauri 的 @tauri-apps/api 包。提供 invoke / listen / emit 等接口。
+ *
+ * IPC 通道：在 Windows 上，vtauri 集成 webview/webview 库，后端通过
+ * webview_bind 把 `__vtauriInvoke` 暴露为页面全局函数。调用它返回一个
+ * Promise，最终由后端调用 webview_return 兑现为 IpcResponse。
  */
 (function (global) {
   'use strict';
@@ -11,45 +14,13 @@
     return 'req_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 10);
   }
 
-  // 探测宿主 IPC 通道
-  // 在 WebView2 下为 window.chrome.webview；跨平台时也可由 V 注入 window.__vtauriBridge。
-  function getBridge() {
-    if (global.chrome && global.chrome.webview) return global.chrome.webview;
-    if (global.__vtauriBridge) return global.__vtauriBridge;
+  // 探测后端注入的 invoke 通道（webview/webview 库的 bind）
+  function getInvoke() {
+    if (typeof global.__vtauriInvoke === 'function') return global.__vtauriInvoke;
     return null;
   }
 
-  // 发送 IPC 消息（POST 到后端）
-  function post(raw) {
-    var bridge = getBridge();
-    if (!bridge) {
-      throw new Error('vtauri: no IPC bridge available');
-    }
-    if (bridge.postMessage) {
-      bridge.postMessage(raw);
-    } else if (bridge.post) {
-      bridge.post(raw);
-    } else {
-      throw new Error('vtauri: bridge does not support postMessage');
-    }
-  }
-
-  // 挂起 Promise 表，用于 invoke 结果关联
-  var pending = {};
-
-  // 供后端调用：收到响应时 resolve 对应请求
-  global.__vtauriOnResponse = function (resp) {
-    var entry = pending[resp.id];
-    if (!entry) return;
-    delete pending[resp.id];
-    if (resp.ok) {
-      entry.resolve(resp.result);
-    } else {
-      entry.reject(new Error(resp.error || 'vtauri command failed'));
-    }
-  };
-
-  // 供后端调用：收到事件广播时派发
+  // 事件监听表：后端 emit 事件时通过 __vtauriOnEvent 派发
   var listeners = {};
   global.__vtauriOnEvent = function (ev) {
     var list = listeners[ev.event] || [];
@@ -63,14 +34,25 @@
    * @returns {Promise<any>}
    */
   function invoke(command, args) {
-    return new Promise(function (resolve, reject) {
-      var id = genId();
-      pending[id] = { resolve: resolve, reject: reject };
-      post(JSON.stringify({
-        id: id,
-        command: command,
-        args: JSON.stringify(args === undefined ? null : args)
-      }));
+    var invokeFn = getInvoke();
+    if (!invokeFn) {
+      return Promise.reject(new Error('vtauri: __vtauriInvoke not available'));
+    }
+    var reqJson = JSON.stringify({
+      id: genId(),
+      command: command,
+      args: JSON.stringify(args === undefined ? null : args)
+    });
+    // webview_bind 的 __vtauriInvoke 返回 Promise，兑现为解析后的 IpcResponse
+    return invokeFn(reqJson).then(function (resp) {
+      if (resp && resp.ok) {
+        // result 是后端返回的 JSON 字符串（如 "Hello, ..."），解析后返回
+        if (resp.result === undefined || resp.result === null || resp.result === '') {
+          return null;
+        }
+        return JSON.parse(resp.result);
+      }
+      throw new Error((resp && resp.error) || 'vtauri command failed');
     });
   }
 
@@ -94,11 +76,8 @@
    * @param {any} payload
    */
   function emit(event, payload) {
-    post(JSON.stringify({
-      id: genId(),
-      command: '__emit',
-      args: JSON.stringify({ event: event, payload: payload })
-    }));
+    // 复用 __vtauriInvoke 通道，调用内置的 __emit 命令
+    return invoke('__emit', { event: event, payload: payload });
   }
 
   var api = { invoke: invoke, listen: listen, emit: emit };

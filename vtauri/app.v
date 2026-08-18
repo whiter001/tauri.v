@@ -22,18 +22,36 @@ pub fn new_app(cfg AppConfig) App {
 	}
 }
 
-// build 使用配置创建主窗口并附着 WebView，完成应用装配。
+// build 使用配置创建主窗口，附着 WebView 并接通 IPC，完成应用装配。
+// 完成后：
+//   - 创建并显示原生窗口；
+//   - 在 Windows 上创建 WebView2 并嵌入窗口，把 __vtauriInvoke 暴露为页面全局函数；
+//   - 之后由调用方通过 load_html / load_url 加载入口页面。
 pub fn (mut app App) build() ! {
 	c := app.config.main_window
 	w := new_window(c.title, int(c.width), int(c.height), c.center)!
 	app.window = w
-	app.webview = new_webview(w.handle)
+
+	mut wv := new_webview(w.handle)
+	wv.attach()!
+	wv.bind_invoke(&app)!
+	app.webview = wv
 	app.started = true
+}
+
+// load_html 将一段 HTML 字符串渲染到主窗口的 WebView 中。
+pub fn (mut app App) load_html(html string) ! {
+	app.webview.load_html(html)!
+}
+
+// load_url 让主窗口的 WebView 加载一个 URL。
+pub fn (mut app App) load_url(url string) ! {
+	app.webview.load_url(url)!
 }
 
 // run 进入应用主循环（阻塞，直到窗口关闭）。
 pub fn (mut app App) run() {
-	app.window.run_message_loop()
+	app.webview.run()
 }
 
 // register_command 注册一个命令到命令注册表。
@@ -55,15 +73,30 @@ pub fn (mut app App) handle_ipc(request_json string) string {
 }
 
 // emit 向后端向前端广播一个事件。
-// 注意：WebView 尚未完成初始化时（骨架阶段 WebView2 未就绪），emit 无法投递事件，
-// 这里显式返回错误提示，避免在 post_message 内部产生模糊的“webview not initialized”。
+// 在 Windows 上通过向页面注入 window.__vtauriOnEvent(...) 实现（需页面已加载 vtauri.js）。
 pub fn (mut app App) emit(event_name string, payload string) ! {
 	if !app.webview.initialized {
-		return error('emit failed: webview not initialized (WebView2 尚未就绪，事件广播待实现)')
+		return error('emit failed: webview not initialized')
 	}
 	ev := IpcEvent{
 		event:   event_name
 		payload: payload
 	}
 	app.webview.post_message(encode_event(ev))!
+}
+
+// inline_asset 把一段 JavaScript 内联进 HTML，用于解决 `set_html` 渲染时
+// `<script src="...">` 无法加载外部文件（无 file:// 基址）的问题。
+// 它优先替换形如 `<script src="vtauri.js"></script>` 的占位标签；
+// 找不到时则把脚本插入到 `</head>` 之前，仍找不到则插入到文档开头。
+pub fn inline_asset(html string, js string) string {
+	marker := '<script src="vtauri.js"></script>'
+	if html.contains(marker) {
+		return html.replace(marker, '<script>\n${js}\n</script>')
+	}
+	head_end := '</head>'
+	if html.contains(head_end) {
+		return html.replace(head_end, '<script>\n${js}\n</script>\n${head_end}')
+	}
+	return '<script>\n${js}\n</script>\n${html}'
 }

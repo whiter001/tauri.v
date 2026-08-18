@@ -17,7 +17,7 @@
 |-----------|------|----------------|
 | `tauri` core | 整合运行时、宏、工具、API 的主 crate | `vtauri/app.v` + 各子模块 |
 | `tao` / `winit` | 跨平台窗口创建与管理 | `vtauri/window.v`（Win32 `CreateWindowExW`） |
-| `wry` / `WebView2` | 在窗口内渲染 Web 前端 | `vtauri/webview.v`（WebView2 COM） |
+| `wry` / `WebView2` | 在窗口内渲染 Web 前端 | `vtauri/webview.v` + `webview_windows.v`（集成 webview/webview） |
 | IPC / command | 前端 JS ↔ 后端 V 的消息与命令 | `vtauri/ipc.v` + `vtauri/command.v` |
 | `tauri.conf.json` | 编译期应用配置 | `vtauri/config.v`（运行时解析 JSON） |
 | `@tauri-apps/api` | 前端可导入的 JS 接口 | `js/vtauri.js` |
@@ -35,10 +35,12 @@
 - 消息循环（`GetMessageW` / `DispatchMessageW`）。
 - 支持设置标题、尺寸、居中。
 
-### Phase 3 — WebView2 集成（框架代码，Windows 运行时验证）
-- `webview.v`：通过 COM 初始化 `ICoreWebView2Environment`，创建 `ICoreWebView2Controller` 并嵌入窗口。
-- 提供 `load_url` / `load_html` / `execute_js`。
-- 说明：COM 接口在 Linux 交叉编译下无法运行验证，故本次提供绑定与调用骨架，留 Windows 上联调。
+### Phase 3 — WebView2 渲染（方案 A：集成 webview/webview）✅（已实现）
+- `native/webview_bridge.cc`（C++ 桥）：把 webview/webview（header-only C++，封装 WebView2）暴露为稳定 C 接口。
+- `native/webview/`：vendored 的 webview/webview 头文件（MIT）。
+- `webview_windows.v`：V 侧封装 `vtauri_wv_create / set_html / bind / return / run`。
+- `app.build()` 创建窗口后 `attach` WebView 并 `bind_invoke`；通过 `load_html` 渲染嵌入的 HTML。
+- 说明：C++ 桥需用 g++ 编译为 `native/webview_bridge.o`（见 `scripts/build_webview_bridge.sh`），Windows 真机验证。
 
 ### Phase 4 — IPC 消息传递与 command 命令系统（本次完成框架）
 - `ipc.v`：定义前端→后端消息协议（`invoke(command, args)` / 回调）。
@@ -66,9 +68,14 @@ fn C.CreateWindowExW(ext_style u32, class &u16, name &u16, style u32, x i32, y i
 ### 3.2 跨平台编译（Windows 分支）
 用 `$if windows { }` 条件编译 + `$else { }` 兜底，保证在 Linux 上仍可编译测试。
 
-### 3.3 WebView2 绑定难点
-WebView2 是 COM 接口，V 中需手动声明 `IUnknown` / `ICoreWebView2*` vtable 布局并 `fnptr` 调用。
-完整实现依赖 Windows 运行时联调。
+### 3.3 WebView2 集成方案（方案 A：集成 webview/webview C 库）
+V 不能直接 include C++ 头文件（V 生成 C 代码），因此：
+1. 用 `native/webview_bridge.cc`（C++，`#include "webview/webview.h"`）把 C API 转发为稳定 C 符号；
+2. 用 g++ 编译为 `native/webview_bridge.o`，V 以 `-lstdc++` 链接；
+3. V 侧 `webview_windows.v` 声明这些 C 函数并调用。
+
+IPC：用 `webview_bind` 把 `__vtauriInvoke` 暴露为页面全局函数，前端调用返回 Promise，
+后端通过 `webview_return` 兑现为 `App.handle_ipc` 的响应。
 
 ## 4. 目录结构
 
@@ -76,7 +83,8 @@ WebView2 是 COM 接口，V 中需手动声明 `IUnknown` / `ICoreWebView2*` vta
 vtauri/
   config.v     # 配置系统
   window.v     # Win32 窗口
-  webview.v    # WebView2（骨架）
+  webview.v        # WebView 抽象接口（跨平台调度）
+  webview_windows.v# WebView Windows 实现（桥接 webview 库 + IPC）
   ipc.v        # IPC 协议
   command.v    # 命令系统
   app.v        # App 主类
@@ -98,7 +106,8 @@ tests/
 - [x] 命令系统：注册与调用命令
 - [x] JS API：前端 `invoke`
 - [x] 示例：`examples/hello` 可交叉编译
-- [ ] WebView2 真机渲染（需 Windows 运行时验证）
+- [x] WebView 渲染：`index.html` 经 `$embed_file` 嵌入，`set_html` 渲染（方案 A，集成 webview 库）
+- [ ] WebView2 真机渲染验证（需 Windows 主机 + WebView2 运行时）
 
 ## 6. 后续路线（超出本次范围）
 - 系统托盘、原生菜单、通知

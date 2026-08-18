@@ -78,3 +78,26 @@ fn test_app_build_non_windows() {
 	assert app.started == true
 	assert app.window.title == 'vtauri'
 }
+
+fn test_inline_asset_replaces_script_src() {
+	html := '<head></head><script src="vtauri.js"></script><body>hi</body>'
+	out := inline_asset(html, 'var x = 1;')
+	assert out.contains('<script>')
+	assert out.contains('var x = 1;')
+	assert !out.contains('src="vtauri.js"')
+}
+
+fn test_inline_asset_head_fallback() {
+	html := '<head><meta charset="utf-8"></head><body>hi</body>'
+	out := inline_asset(html, 'var x = 1;')
+	// 找不到 script 占位时，插入到 </head> 之前
+	assert out.contains('<script>')
+	assert out.index('var x = 1;') < out.index('</head>')
+}
+
+fn test_inline_asset_no_head() {
+	html := '<body>hi</body>'
+	out := inline_asset(html, 'var x = 1;')
+	assert out.contains('var x = 1;')
+	assert out.starts_with('<script>')
+}

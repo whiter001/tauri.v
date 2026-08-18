@@ -1,10 +1,21 @@
 // main.v — vtauri 最小示例应用
-// 运行入口：读取配置 -> 构建 App -> 注册命令 -> 启动窗口。
+// 运行入口：读取配置 -> 构建 App -> 注册命令 -> 嵌入前端资源 -> 启动窗口。
+//
+// Windows 交叉编译（一键）：
+//   bash ../../scripts/build_hello_windows.sh
+//   等效于：先 sh ../../scripts/build_webview_bridge.sh（g++ 编译 C++ 桥），
+//          再 v -os windows -o hello.exe main.v
 
 module main
 
 import vtauri
 import json2
+
+// 内嵌前端资源：入口 HTML 与 vtauri.js（编译期嵌入到可执行文件）。
+const (
+	index_html = $embed_file('index.html')
+	vtauri_js  = $embed_file('../../js/vtauri.js')
+)
 
 fn main() {
 	// 1. 读取配置
@@ -27,15 +38,22 @@ fn main() {
 		return vtauri_encode_sum(nums)
 	})
 
-	// 5. 构建窗口
+	// 5. 构建窗口 + WebView
 	app.build() or {
 		eprintln('build failed: ${err}')
 		return
 	}
 
+	// 6. 渲染入口页面：把 vtauri.js 内联进 index.html，避免 set_html 时外部脚本 404
+	html := vtauri.inline_asset(index_html.to_string(), vtauri_js.to_string())
+	app.load_html(html) or {
+		eprintln('load_html failed: ${err}')
+		return
+	}
+
 	println('vtauri example "${cfg.product_name}" v${cfg.version} starting...')
 
-	// 6. 进入消息循环（阻塞）
+	// 7. 进入消息循环（阻塞）
 	app.run()
 }
 

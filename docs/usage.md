@@ -20,18 +20,21 @@ sudo ./v symlink
 
 ### 1.2 Windows 交叉编译工具（Linux 上开发 Windows 应用时）
 
-在 Linux 上交叉编译 Windows `.exe` 需要 MinGW：
+在 Linux 上交叉编译 Windows `.exe` 需要 MinGW（含 C++ 编译器，因为 vtauri 的 WebView 集成依赖一个 C++ 桥）：
 
 ```bash
 # Debian / Ubuntu
-sudo apt-get install -y gcc-mingw-w64-x86-64
+sudo apt-get install -y g++-mingw-w64-x86-64
 ```
 
 在 Windows 本机上开发则无需此工具，直接用 `v -os windows` 或默认编译即可。
 
 ### 1.3 项目依赖
 
-vtauri 除 V 标准库外**无任何外部依赖**，`v.mod` 中的 `dependencies` 为空。
+vtauri 的 V 代码除 V 标准库外**无外部依赖**（`v.mod` 的 `dependencies` 为空）。
+为渲染 Web 前端，vtauri 集成了第三方 **webview/webview** 库（MIT，头文件已 vendored 在
+`native/webview/`，内部封装 WebView2），仅需在构建时用 C++ 编译器把
+`native/webview_bridge.cc` 编译为一个对象文件即可。
 
 ## 2. 目录结构
 
@@ -40,17 +43,23 @@ vtauri/            # 框架核心（库模块 vtauri）
   config.v         # 配置系统：解析 vtauri.conf.json
   window.v         # 窗口抽象 + 跨平台桩
   window_windows.v # Win32 窗口实现（CreateWindowExW + 消息循环）
-  webview.v        # WebView2 绑定骨架
+  webview.v        # WebView 抽象接口（跨平台调度）
+  webview_windows.v# WebView Windows 实现（集成 webview/webview 库 + IPC）
   ipc.v            # IPC 消息协议
   command.v        # 命令注册与分发
   app.v            # App 主类（聚合各组件）
   jsonx.v          # JSON 编解码辅助
+native/            # WebView C++ 集成
+  webview/         # vendored 的 webview/webview 头文件（MIT）
+  vtauri_webview.h # V 侧 include 的 C 桥接接口
+  webview_bridge.cc# C++ 桥实现（需 g++ 编译为 .o）
 js/
   vtauri.js        # 前端 API（invoke / listen / emit）
 examples/
   hello/           # 最小可运行示例
-docs/
-  usage.md         # 本文档（使用方案）
+scripts/
+  build_webview_bridge.sh # 编译 C++ 桥
+  build_hello_windows.sh  # 一键交叉编译示例
 ```
 
 > **注意**：`vtauri/` 是一个纯 V 库模块，请勿在其中放置 `module main` 的入口文件，
@@ -65,9 +74,9 @@ docs/
 cd examples/hello
 v run main.v
 
-# 交叉编译为 Windows 可执行文件
-v -os windows -o hello.exe main.v
-# 产出 hello.exe（PE32+ x86-64）
+# 交叉编译为 Windows 可执行文件（先编译 C++ 桥，再交叉编译）
+bash scripts/build_hello_windows.sh
+# 产出 examples/hello/hello.exe（PE32+ x86-64）
 ```
 
 ### 3.2 运行单元测试
@@ -85,6 +94,12 @@ v test vtauri
 module main
 
 import vtauri
+
+// 内嵌前端资源（编译期嵌入可执行文件；路径相对本文件所在目录）
+const (
+	index_html = $embed_file('index.html')
+	vtauri_js  = $embed_file('../../js/vtauri.js')
+)
 
 fn main() {
 	// 1. 读取配置（可缺省，失败时回退默认配置）
@@ -107,7 +122,14 @@ fn main() {
 		return
 	}
 
-	// 5. 进入消息循环（Windows 上阻塞直到窗口关闭）
+	// 5. 加载前端页面（把 vtauri.js 内联进 index.html，避免 set_html 时外部脚本 404）
+	html := vtauri.inline_asset(index_html.to_string(), vtauri_js.to_string())
+	app.load_html(html) or {
+		eprintln('load_html failed: ${err}')
+		return
+	}
+
+	// 6. 进入消息循环（Windows 上阻塞直到窗口关闭）
 	app.run()
 }
 ```
@@ -234,12 +256,14 @@ const sum = await window.__VTauri.invoke('add', { a: 20, b: 22 });
 | 场景 | 命令 | 说明 |
 |------|------|------|
 | Linux 本地运行 | `cd examples/hello && v run main.v` | 窗口为桩实现，验证核心逻辑 |
-| 交叉编译 Windows | `cd examples/hello && v -os windows -o hello.exe main.v` | 产出 PE32+ 可执行文件 |
+| 编译 C++ 桥 | `bash scripts/build_webview_bridge.sh` | 用 g++ 生成 `native/webview_bridge.o` |
+| 交叉编译 Windows | `bash scripts/build_hello_windows.sh` | 一键编译桥 + 交叉编译为 PE32+ |
 | 运行库测试 | `v test vtauri` | 全部单元测试 |
-| 快速交叉编译任意入口 | `v -os windows -o out.exe main.v` | 通用写法 |
 
-> **说明**：Linux 上运行 vtauri 应用时窗口系统为桩实现（桩窗口），核心的配置解析、IPC、
-> 命令系统逻辑可完整验证；真正的 Win32 窗口与 WebView2 渲染需在 Windows 运行时联调。
+> **说明**：Windows 上运行 vtauri 应用时，WebView2 负责渲染前端页面并接管消息循环；
+> 目标机需安装 [WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/)（Win10/11 通常已内置）。
+> Linux 上运行 vtauri 应用时窗口系统为桩实现，核心的配置解析、IPC、命令系统逻辑可完整验证；
+> 真正的 WebView2 渲染需在 Windows 运行时联调。
 
 ## 7. 架构对应
 
@@ -247,7 +271,7 @@ const sum = await window.__VTauri.invoke('add', { a: 20, b: 22 });
 |-----------|------------|------|
 | `tauri` core | `vtauri/app.v` | 聚合运行时、配置、命令、窗口、WebView |
 | `tao` / `winit` | `vtauri/window.v` + `window_windows.v` | Win32 窗口创建与管理 |
-| `wry` / `WebView2` | `vtauri/webview.v` | WebView2 渲染（骨架，待真机联调） |
+| `wry` / `WebView2` | `vtauri/webview.v` + `webview_windows.v` + `native/webview_bridge.cc` | WebView2 渲染（集成 webview/webview 库） |
 | IPC / command | `vtauri/ipc.v` + `command.v` | 前后端消息编解码与命令分发 |
 | `tauri.conf.json` | `vtauri/config.v` | 应用配置解析 |
 | `@tauri-apps/api` | `js/vtauri.js` | 前端 `invoke` / `listen` / `emit` |
@@ -271,5 +295,10 @@ sudo apt-get install -y libgc-dev
 
 ### Q3: Windows 真机上窗口不显示内容？
 
-WebView2 渲染仍是骨架阶段，需要在 Windows 上联调 WebView2 COM 绑定。当前可验证窗口创建、
-IPC 与命令系统。
+旧版本（骨架阶段）WebView2 渲染未实现，只显示空白 Win32 窗口。
+本仓库已改为集成 webview/webview 库（方案 A）：
+
+1. 确认已编译 C++ 桥：`bash scripts/build_webview_bridge.sh`；
+2. 确认目标机装有 WebView2 Runtime；
+3. 若仍空白，检查 `app.build()` 之后是否调用了 `app.load_html(...)` 加载入口页面，
+   以及页面中是否正确内联了 `js/vtauri.js`（参考 `examples/hello/main.v`）。

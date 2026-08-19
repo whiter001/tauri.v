@@ -76,6 +76,20 @@ char *vtauri_mac_open_file(const char *title, const char *filters_csv);
 /* 保存文件对话框（NSSavePanel，模态）。返回值约定同上；default_name 为默认文件名。 */
 char *vtauri_mac_save_file(const char *title, const char *default_name);
 
+/* 托盘菜单项点击回调：id 为 add_item 时传入的菜单项标识。 */
+typedef void (*vtauri_mac_tray_cb)(const char *id, void *userdata);
+
+/* 创建系统托盘图标（NSStatusItem），title 为显示在菜单栏右侧的文本（可为 emoji）。
+ * 返回托盘句柄（用于后续 add_item / on_click）。仅 macOS 实现；非 macOS 返回 NULL。
+ * 应在 NSApplication 创建后调用（即 vtauri_wv_create 之后）。 */
+void *vtauri_mac_tray_create(const char *title);
+
+/* 给托盘添加一个菜单项。id 为回调时回传的标识，label 为显示文本。 */
+void vtauri_mac_tray_add_item(void *tray, const char *id, const char *label);
+
+/* 注册托盘菜单项点击回调。 */
+void vtauri_mac_tray_on_click(void *tray, vtauri_mac_tray_cb cb, void *userdata);
+
 #ifdef __cplusplus
 }
 #endif

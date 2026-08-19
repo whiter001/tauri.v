@@ -23,6 +23,7 @@
 | macOS 打包 | `scripts/bundle_macos.sh` | .app 组包 + Info.plist + 图标 + ad-hoc/Developer ID 签名 | ✅ |
 | macOS 菜单/窗口控制 | `vtauri/webview_darwin.v` + `native/webview_bridge.cc` | 标准菜单栏（About/Quit/Edit）、App.quit()、resizable 约束 | ✅ |
 | 原生对话框 | `vtauri/dialog.v` / `dialog_darwin.v` | 消息框 / 打开文件（过滤）/ 保存文件，对应 tauri-plugin-dialog | ✅ macOS |
+| 系统托盘 | `vtauri/tray.v` / `tray_darwin.v` | NSStatusItem 菜单栏图标 + 菜单项点击回调，对应 Tauri tray | ✅ macOS |
 
 ## 环境
 

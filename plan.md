@@ -112,9 +112,10 @@ tests/
 - [x] macOS 打包：bundle_macos.sh 组 .app（含图标与签名），open 启动 + Dock 图标已验证
 - [x] macOS 菜单栏与窗口控制：标准菜单栏（Cmd+Q/Edit 快捷键）+ App.quit() + resizable 约束，真机已验证
 - [x] macOS 原生对话框：dialog.v（消息框/打开/保存），IPC 全链路真机已验证
+- [x] macOS 系统托盘：tray.v（NSStatusItem + 菜单回调），真机已验证
 
 ## 6. 后续路线（超出本次范围）
-- 系统托盘、原生菜单、通知
+- 原生菜单自定义、通知、托盘图片图标
 - 跨平台（Linux / 移动端）后端
 - 应用打包器（`.msi` / NSIS `.exe` / dmg + 公证自动化）
 - 前端资源打包与自更新

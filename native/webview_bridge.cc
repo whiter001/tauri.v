@@ -18,6 +18,53 @@
 #include <cstring>
 #include <string>
 
+#if defined(WEBVIEW_PLATFORM_DARWIN)
+#include <objc/runtime.h>
+#endif
+
+#if defined(WEBVIEW_PLATFORM_DARWIN)
+namespace objc = webview::detail::objc;
+namespace cocoa = webview::detail::cocoa;
+#endif
+
+// --- 系统托盘（macOS NSStatusItem）支持 ---
+// 托盘句柄与回调上下文均为进程生命周期分配（new），有意不释放：
+// NSStatusItem/NSMenu/target 实例由系统强持有，存活到进程退出，
+// 过早释放（或依赖 V 侧 GC）会留下野指针。
+
+// 回调上下文：cb 为 V 侧回调函数，userdata 为其用户指针。
+struct VtauriTrayCtx {
+  vtauri_mac_tray_cb cb = nullptr;
+  void *userdata = nullptr;
+};
+
+// 托盘句柄结构体：直接作为 vtauri_mac_tray_create 的返回值（tray 句柄）。
+// cbctx 是句柄的成员，地址在托盘生命周期内稳定，target 的 ivar 指向它。
+struct VtauriTrayHandle {
+  void *item = nullptr;   // NSStatusItem *（系统强持有）
+  void *menu = nullptr;   // NSMenu *（系统强持有）
+  void *target = nullptr; // VtauriTrayTarget 实例（动态类，被菜单项强持有）
+  VtauriTrayCtx cbctx;
+};
+
+#if defined(WEBVIEW_PLATFORM_DARWIN)
+// 动态类 VtauriTrayTarget 的 action 方法 IMP：菜单项被点击时，
+// 从 ivar 读回调上下文，从 sender（NSMenuItem）的 representedObject 读菜单项 id，
+// 经注册的回调转回 V。
+static void vtauri_tray_action_imp(id self, SEL _cmd, id sender) {
+  objc::autoreleasepool arp;
+  Ivar iv = class_getInstanceVariable(object_getClass(self), "vtauri_ctx");
+  auto *ctx = iv ? *reinterpret_cast<VtauriTrayCtx **>(
+                       reinterpret_cast<char *>(self) + ivar_getOffset(iv))
+                 : nullptr;
+  id repr = objc::msg_send<id>(sender, objc::selector("representedObject"));
+  if (ctx && ctx->cb && repr) {
+    const char *idstr = cocoa::NSString_get_UTF8String(repr);
+    ctx->cb(idstr ? idstr : "", ctx->userdata);
+  }
+}
+#endif
+
 extern "C" {
 
 vtauri_wv_t vtauri_wv_create(int debug, void *window) {
@@ -260,6 +307,112 @@ char *vtauri_mac_save_file(const char *title, const char *default_name) {
   return nullptr;
 #else
   return nullptr;
+#endif
+}
+
+void *vtauri_mac_tray_create(const char *title) {
+#if defined(WEBVIEW_PLATFORM_DARWIN)
+  namespace objc = webview::detail::objc;
+  namespace cocoa = webview::detail::cocoa;
+
+  objc::autoreleasepool arp;
+
+  // 防御性确保 NSApp 存在（与对话框同款保险）。
+  cocoa::NSApplication_setActivationPolicy(
+      cocoa::NSApplication_get_sharedApplication(),
+      cocoa::NSApplicationActivationPolicyRegular);
+
+  // 动态类 VtauriTrayTarget 进程内只建一次（static 标志位守卫；
+  // 重复 objc_registerClassPair 同名类会崩溃）。
+  static bool class_ready = false;
+  if (!class_ready) {
+    Class cls =
+        objc_allocateClassPair(objc::get_class("NSObject"), "VtauriTrayTarget", 0);
+    // ivar 存 VtauriTrayCtx*；alignment 传 log2(sizeof(void*))。
+    class_addIvar(cls, "vtauri_ctx", sizeof(void *), 3 /* log2(8) */, "^v");
+    class_addMethod(cls, objc::selector("vtauriTrayAction:"),
+                    reinterpret_cast<IMP>(vtauri_tray_action_imp), "v@:@");
+    objc_registerClassPair(cls);
+    class_ready = true;
+  }
+  id target =
+      objc::msg_send<id>(objc::get_class("VtauriTrayTarget"), objc::selector("new"));
+
+  // NSStatusItem：可变宽度文本图标（NSVariableStatusItemLength = -1）。
+  // 注意：statusItemWithLength: 返回 autoreleased 对象，且 NSStatusBar 并不持有
+  // status item——必须显式 retain，否则本函数退出时 autoreleasepool 排空会把它
+  // 释放，托盘图标立刻从菜单栏消失。
+  id status_item = objc::msg_send<id>(
+      objc::msg_send<id>(objc::get_class("NSStatusBar"),
+                         objc::selector("systemStatusBar")),
+      objc::selector("statusItemWithLength:"), -1.0);
+  status_item = objc::msg_send<id>(status_item, objc::selector("retain"));
+  id button = objc::msg_send<id>(status_item, objc::selector("button"));
+  objc::msg_send<void>(button, objc::selector("setTitle:"),
+                       cocoa::NSString_stringWithUTF8String(title));
+
+  // 托盘菜单：点击图标时弹出。
+  id menu = objc::msg_send<id>(objc::get_class("NSMenu"), objc::selector("new"));
+  objc::msg_send<void>(status_item, objc::selector("setMenu:"), menu);
+
+  // 进程生命周期句柄：item 已显式 retain（见上）；menu 被 status item 持有，
+  // target 被菜单项持有。整条对象图随 item 存活，不释放。
+  auto *handle = new VtauriTrayHandle;
+  handle->item = status_item;
+  handle->menu = menu;
+  handle->target = target;
+  // 把指向 handle->cbctx 的指针写进 target 的 vtauri_ctx ivar
+  //（cbctx 是 handle 的成员，地址在托盘生命周期内稳定）。
+  Ivar iv = class_getInstanceVariable(object_getClass(target), "vtauri_ctx");
+  if (iv) {
+    void **slot = reinterpret_cast<void **>(reinterpret_cast<char *>(target) +
+                                            ivar_getOffset(iv));
+    *slot = &handle->cbctx;
+  }
+  return handle;
+#else
+  return nullptr;
+#endif
+}
+
+void vtauri_mac_tray_add_item(void *tray, const char *item_id,
+                              const char *label) {
+#if defined(WEBVIEW_PLATFORM_DARWIN)
+  if (tray == nullptr) {
+    return;
+  }
+  namespace objc = webview::detail::objc;
+  namespace cocoa = webview::detail::cocoa;
+
+  objc::autoreleasepool arp;
+
+  auto *handle = static_cast<VtauriTrayHandle *>(tray);
+  id menu = static_cast<id>(handle->menu);
+  id target = static_cast<id>(handle->target);
+
+  // alloc/initWithTitle:action:keyEquivalent: 一步设置标题与 action，
+  // 再单独 setTarget / setRepresentedObject，最后 addItem 进托盘菜单。
+  id item = objc::msg_send<id>(
+      objc::msg_send<id>(objc::get_class("NSMenuItem"), objc::selector("alloc")),
+      objc::selector("initWithTitle:action:keyEquivalent:"),
+      cocoa::NSString_stringWithUTF8String(label),
+      objc::selector("vtauriTrayAction:"),
+      cocoa::NSString_stringWithUTF8String(""));
+  objc::msg_send<void>(item, objc::selector("setTarget:"), target);
+  objc::msg_send<void>(item, objc::selector("setRepresentedObject:"),
+                       cocoa::NSString_stringWithUTF8String(item_id));
+  objc::msg_send<void>(menu, objc::selector("addItem:"), item);
+#endif
+}
+
+void vtauri_mac_tray_on_click(void *tray, vtauri_mac_tray_cb cb, void *userdata) {
+#if defined(WEBVIEW_PLATFORM_DARWIN)
+  if (tray == nullptr) {
+    return;
+  }
+  auto *handle = static_cast<VtauriTrayHandle *>(tray);
+  handle->cbctx.cb = cb;
+  handle->cbctx.userdata = userdata;
 #endif
 }
 

@@ -422,7 +422,53 @@ var result = await window.__VTauri.invoke('dialog_open', '');
 真机验证结果：消息框 Enter → 页面显示「已显示」；打开文件 Escape → 页面显示「已取消」；
 保存文件 Enter → 页面显示真实路径（如 `/Users/byf/Documents/untitled.txt`）。
 
-## 9. 架构对应
+## 9. 系统托盘
+
+对应 Tauri 的 `tray icon` / SystemTray，vtauri 提供菜单栏托盘图标与菜单项点击回调
+（仅 macOS 实现，其他平台为桩：打印提示并返回空 `Tray`，保证跨平台编译），实现在
+`vtauri/tray.v` / `vtauri/tray_darwin.v`，由桥接层 `native/webview_bridge.cc`
+驱动 AppKit 的 `NSStatusItem`（菜单栏右侧文本图标）：
+
+```v
+import vtauri
+
+// 创建托盘图标（须在 app.build() 之后、app.run() 之前）
+mut tray := vtauri.new_tray('VT')!
+tray.add_item('about', '关于 vtauri')
+tray.add_item('quit', '退出')
+
+// 注册菜单项点击回调：id 为 add_item 传入的 id
+tray.on_menu_click(fn [mut app] (id string) {
+	match id {
+		'about' { vtauri.message_box('vtauri hello', '由 V 语言实现的 Tauri 风格框架') }
+		'quit' { app.quit() }
+		else {}
+	}
+})
+```
+
+三个 API：
+
+| API | 说明 |
+|-----|------|
+| `new_tray(title) !` | 创建托盘图标，`title` 为菜单栏显示文本（emoji 可用）；失败返回错误 |
+| `add_item(id, label)` | 添加菜单项，`id` 在点击回调中原样回传 |
+| `on_menu_click(fn (id string))` | 注册菜单项点击回调，须在 `app.run()` 之前调用 |
+
+> **回调闭包捕获**：回调闭包用 `fn [mut app]` 捕获 app —— V 的闭包捕获按值拷贝，
+> 拷贝里的 `app.quit()` 通过 webview 原生句柄仍能终止同一事件循环。
+
+限制：
+
+- 托盘图标目前是文本（`new_tray` 的 `title`），图片图标未做；
+- 菜单栏拥挤的刘海屏 Mac 上，托盘图标可能被系统隐藏（图标过多时 macOS 行为，非 bug）；
+- 需在 `app.build()` 之后创建托盘，因为 NSStatusItem 依赖 NSApplication 已存在；
+- 左键事件、多托盘未做。
+
+真机验证结果：System Events 确认 menu bar 2 出现「VT」托盘项；点开菜单显示「关于 vtauri / 退出」；
+点击「退出」进程正常退出（动态类回调 → V 闭包 → app.quit() 全链路）。
+
+## 10. 架构对应
 
 | Tauri 组件 | vtauri 对应 | 说明 |
 |-----------|------------|------|
@@ -433,7 +479,7 @@ var result = await window.__VTauri.invoke('dialog_open', '');
 | `tauri.conf.json` | `vtauri/config.v` | 应用配置解析 |
 | `@tauri-apps/api` | `js/vtauri.js` | 前端 `invoke` / `listen` / `emit` |
 
-## 10. 常见问题（FAQ）
+## 11. 常见问题（FAQ）
 
 ### Q1: `v run main.v` 报 `bad module definition: v imports module "vtauri"...`
 

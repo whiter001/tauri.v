@@ -63,6 +63,20 @@ fn main() {
 		return
 	}
 
+	// 5b. 系统托盘：菜单栏右侧文本图标 + 菜单项。
+	// 回调闭包用 [mut app] 捕获 app 的可变拷贝（V 闭包捕获按值拷贝，
+	// app.quit() 通过拷贝里的 webview 原生句柄同样能终止事件循环）。
+	mut tray := vtauri.new_tray('VT') or { panic(err) }
+	tray.add_item('about', '关于 vtauri')
+	tray.add_item('quit', '退出')
+	tray.on_menu_click(fn [mut app] (id string) {
+		match id {
+			'about' { vtauri.message_box('vtauri hello', '由 V 语言实现的 Tauri 风格框架') }
+			'quit' { app.quit() }
+			else {}
+		}
+	})
+
 	// 6. 渲染入口页面：把 vtauri.js 内联进 index.html，避免 set_html 时外部脚本 404
 	html := vtauri.inline_asset(index_html.to_string(), vtauri_js.to_string())
 	app.load_html(html) or {

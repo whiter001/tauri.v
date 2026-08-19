@@ -15,6 +15,7 @@ module vtauri
 fn C.vtauri_wv_create(debug int, window voidptr) voidptr
 fn C.vtauri_wv_destroy(w voidptr) int
 fn C.vtauri_wv_run(w voidptr) int
+fn C.vtauri_wv_terminate(w voidptr) int
 fn C.vtauri_wv_set_html(w voidptr, html &char) int
 fn C.vtauri_wv_navigate(w voidptr, url &char) int
 fn C.vtauri_wv_eval(w voidptr, js &char) int
@@ -22,6 +23,7 @@ fn C.vtauri_wv_bind(w voidptr, name &char, cb fn (&char, &char, voidptr), userda
 fn C.vtauri_wv_return(w voidptr, id &char, status int, result &char) int
 fn C.vtauri_wv_set_title(w voidptr, title &char) int
 fn C.vtauri_wv_set_size(w voidptr, width int, height int, hints int) int
+fn C.vtauri_mac_install_app_menu(app_name &char)
 
 // attach_darwin 创建由 webview 库自建的 macOS 窗口。
 // macOS 上窗口句柄为 nil（窗口由库自建），也无需初始化 COM。
@@ -35,11 +37,24 @@ fn (mut wv WebView) attach_darwin() ! {
 }
 
 // set_window_props_darwin 设置窗口标题与尺寸。
+// resizable=false 时以 WEBVIEW_HINT_FIXED(=3) 设置尺寸：库的 cocoa 后端会去掉
+// NSWindowStyleMaskResizable 并设 contentMinSize=contentMaxSize，即不可调整大小。
 // 库的 cocoa 后端在 set_size 时会居中窗口，center 参数目前由库行为覆盖，故不额外处理。
-fn (mut wv WebView) set_window_props_darwin(title string, width int, height int, center bool) {
+fn (mut wv WebView) set_window_props_darwin(title string, width int, height int, center bool, resizable bool) {
 	C.vtauri_wv_set_title(wv.native, &char(title.str))
-	C.vtauri_wv_set_size(wv.native, width, height, 0)
+	hints := if resizable { 0 } else { 3 } // 0=WEBVIEW_HINT_NONE, 3=WEBVIEW_HINT_FIXED
+	C.vtauri_wv_set_size(wv.native, width, height, hints)
 	_ = center // 居中由库的 set_size 行为覆盖，显式标记避免未使用告警
+}
+
+// terminate_darwin 终止应用事件循环（窗口关闭后进程退出）。
+fn (mut wv WebView) terminate_darwin() {
+	C.vtauri_wv_terminate(wv.native)
+}
+
+// install_app_menu_darwin 安装标准 macOS 应用菜单栏（About/Quit + Edit 全套）。
+fn (mut wv WebView) install_app_menu_darwin(app_name string) {
+	C.vtauri_mac_install_app_menu(&char(app_name.str))
 }
 
 // load_html_darwin 渲染一段 HTML 字符串。

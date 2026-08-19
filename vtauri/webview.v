@@ -133,10 +133,27 @@ pub fn (mut wv WebView) destroy() {
 	wv.initialized = false
 }
 
-// set_window_props 设置窗口标题与尺寸（仅 macOS 有效：macOS 上窗口由 webview 库自建）。
-pub fn (mut wv WebView) set_window_props(title string, width int, height int, center bool) {
+// set_window_props 设置窗口标题、尺寸与可否调整大小（仅 macOS 有效：macOS 上窗口由 webview 库自建）。
+// resizable=false 时窗口不可调整大小（WEBVIEW_HINT_FIXED）。
+pub fn (mut wv WebView) set_window_props(title string, width int, height int, center bool, resizable bool) {
 	$if macos {
-		wv.set_window_props_darwin(title, width, height, center)
+		wv.set_window_props_darwin(title, width, height, center, resizable)
+	}
+}
+
+// terminate 终止平台事件循环（Windows/macOS 有效，其余平台 no-op）。
+pub fn (mut wv WebView) terminate() {
+	$if windows {
+		wv.terminate_windows()
+	} $else $if macos {
+		wv.terminate_darwin()
+	}
+}
+
+// install_app_menu 安装应用菜单栏（仅 macOS 有效）。
+pub fn (mut wv WebView) install_app_menu(app_name string) {
+	$if macos {
+		wv.install_app_menu_darwin(app_name)
 	}
 }
 

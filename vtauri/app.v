@@ -26,7 +26,8 @@ pub fn new_app(cfg AppConfig) App {
 // 完成后：
 //   - 创建并显示原生窗口（Windows 上为 Win32 窗口；macOS 上由 webview 库自建 NSWindow）；
 //   - 在 Windows 上创建 WebView2 并嵌入窗口，把 __vtauriInvoke 暴露为页面全局函数；
-//     在 macOS 上由 webview 库自建 NSWindow 并应用配置的标题/尺寸；
+//     在 macOS 上由 webview 库自建 NSWindow，应用配置的标题/尺寸/可调性，并自动安装
+//     标准应用菜单栏（About/Quit + Edit 全套，提供 Cmd+Q 与复制粘贴快捷键）；
 //   - 之后由调用方通过 load_html / load_url 加载入口页面。
 pub fn (mut app App) build() ! {
 	c := app.config.main_window
@@ -36,11 +37,17 @@ pub fn (mut app App) build() ! {
 	mut wv := new_webview(w.handle)
 	wv.attach()!
 	$if macos {
-		wv.set_window_props(c.title, int(c.width), int(c.height), c.center)
+		wv.set_window_props(c.title, int(c.width), int(c.height), c.center, c.resizable)
+		wv.install_app_menu(app.config.product_name)
 	}
 	wv.bind_invoke(&app)!
 	app.webview = wv
 	app.started = true
+}
+
+// quit 退出应用（终止平台事件循环）。
+pub fn (mut app App) quit() {
+	app.webview.terminate()
 }
 
 // load_html 将一段 HTML 字符串渲染到主窗口的 WebView 中。

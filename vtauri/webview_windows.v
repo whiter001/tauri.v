@@ -20,6 +20,7 @@ module vtauri
 fn C.vtauri_wv_create(debug int, window voidptr) voidptr
 fn C.vtauri_wv_destroy(w voidptr) int
 fn C.vtauri_wv_run(w voidptr) int
+fn C.vtauri_wv_terminate(w voidptr) int
 fn C.vtauri_wv_set_html(w voidptr, html &char) int
 fn C.vtauri_wv_navigate(w voidptr, url &char) int
 fn C.vtauri_wv_eval(w voidptr, js &char) int
@@ -107,6 +108,11 @@ fn (mut wv WebView) bind_invoke_windows(app &App) ! {
 // run_windows 进入 webview 的消息循环（阻塞，直到窗口关闭）。
 fn (mut wv WebView) run_windows() {
 	C.vtauri_wv_run(wv.native)
+}
+
+// terminate_windows 终止 Windows 上的 webview 消息循环（webview 库支持 webview_terminate）。
+fn (mut wv WebView) terminate_windows() {
+	C.vtauri_wv_terminate(wv.native)
 }
 
 // destroy_windows 销毁 webview 实例并释放绑定上下文。

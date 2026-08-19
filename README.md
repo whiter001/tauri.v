@@ -21,6 +21,7 @@
 | 示例 | `examples/remote` | 远程 URL 加载示例（`load_url` 嵌套 vlang.io） | ✅（可编译 `.exe`） |
 | C++ 桥 | `native/webview_bridge.cpp`（`#include` 实现于 `.cc`） | 把 webview 库暴露为稳定 C 接口（MSVC 编译为 `.obj`） | ✅ |
 | macOS 打包 | `scripts/bundle_macos.sh` | .app 组包 + Info.plist + 图标 + ad-hoc/Developer ID 签名 | ✅ |
+| macOS 菜单/窗口控制 | `vtauri/webview_darwin.v` + `native/webview_bridge.cc` | 标准菜单栏（About/Quit/Edit）、App.quit()、resizable 约束 | ✅ |
 
 ## 环境
 

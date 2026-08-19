@@ -12,6 +12,7 @@
 - [x] **Phase 6：WebView 渲染** — 集成 webview/webview 库（封装 WebView2），通过 `set_html` 渲染；支持 MSVC 本机编译与窗口尺寸自适应
 - [x] **Phase 7：macOS 支持** — `vtauri/webview_darwin.v` 基于 webview/webview 的 WKWebView 后端，窗口由库自建 NSWindow；本机编译、渲染与 IPC 已验证
 - [x] **Phase 8：macOS 打包** — `scripts/bundle_macos.sh` 组 .app（Info.plist/图标/ad-hoc 或 Developer ID 签名），`scripts/gen_demo_icon.sh` 程序生成演示图标；`bundled_config_path` 支持包内配置
+- [x] **Phase 9：macOS 菜单栏与窗口控制** — 自动安装标准菜单栏（Cmd+Q、Edit 复制粘贴快捷键）、App.quit()、resizable 配置生效
 
 ## 待办
 

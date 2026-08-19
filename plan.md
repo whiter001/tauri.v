@@ -110,6 +110,7 @@ tests/
 - [ ] WebView2 真机渲染验证（需 Windows 主机 + WebView2 运行时）
 - [x] macOS 支持：webview_darwin.v（WKWebView 后端，库自建 NSWindow），本机编译 + 渲染 + IPC 已验证
 - [x] macOS 打包：bundle_macos.sh 组 .app（含图标与签名），open 启动 + Dock 图标已验证
+- [x] macOS 菜单栏与窗口控制：标准菜单栏（Cmd+Q/Edit 快捷键）+ App.quit() + resizable 约束，真机已验证
 
 ## 6. 后续路线（超出本次范围）
 - 系统托盘、原生菜单、通知

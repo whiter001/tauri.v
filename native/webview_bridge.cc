@@ -15,6 +15,8 @@
 #include "webview/webview.h"
 #include "vtauri_webview.h"
 
+#include <string>
+
 extern "C" {
 
 vtauri_wv_t vtauri_wv_create(int debug, void *window) {
@@ -64,6 +66,76 @@ int vtauri_wv_set_title(vtauri_wv_t w, const char *title) {
 int vtauri_wv_set_size(vtauri_wv_t w, int width, int height, int hints) {
   return static_cast<int>(webview_set_size(reinterpret_cast<webview_t>(w), width,
                                            height, static_cast<webview_hint_t>(hints)));
+}
+
+void vtauri_mac_install_app_menu(const char *app_name) {
+#if defined(WEBVIEW_PLATFORM_DARWIN)
+  namespace objc = webview::detail::objc;
+  namespace cocoa = webview::detail::cocoa;
+
+  // 复用 webview 库自带的 objc 封装（native/webview/detail/platform/darwin/objc 与 cocoa）：
+  // msg_send / selector / get_class / autoreleasepool / NSString_stringWithUTF8String 等。
+  // 菜单项全部用 +new / alloc-init 一次性创建并挂到 NSApplication 主菜单，不手动 release：
+  // 菜单由 NSApplication 强持有，存活整个进程生命周期，无需（也不应）释放。
+  objc::autoreleasepool arp;
+
+  id menubar =
+      objc::msg_send<id>(objc::get_class("NSMenu"), objc::selector("new"));
+
+  // --- App 菜单：About / Quit（Cmd+Q） ---
+  id app_item =
+      objc::msg_send<id>(objc::get_class("NSMenuItem"), objc::selector("new"));
+  objc::msg_send<void>(menubar, objc::selector("addItem:"), app_item);
+  id app_menu =
+      objc::msg_send<id>(objc::get_class("NSMenu"), objc::selector("new"));
+  objc::msg_send<void>(app_menu, objc::selector("addItemWithTitle:action:keyEquivalent:"),
+                       cocoa::NSString_stringWithUTF8String(std::string("About ") + app_name),
+                       objc::selector("orderFrontStandardAboutPanel:"),
+                       cocoa::NSString_stringWithUTF8String(""));
+  objc::msg_send<void>(app_menu, objc::selector("addItem:"),
+                       objc::msg_send<id>(objc::get_class("NSMenuItem"),
+                                          objc::selector("separatorItem")));
+  objc::msg_send<void>(app_menu, objc::selector("addItemWithTitle:action:keyEquivalent:"),
+                       cocoa::NSString_stringWithUTF8String(std::string("Quit ") + app_name),
+                       objc::selector("terminate:"),
+                       cocoa::NSString_stringWithUTF8String("q"));
+  objc::msg_send<void>(app_item, objc::selector("setSubmenu:"), app_menu);
+
+  // --- Edit 菜单：Undo / Redo / Cut / Copy / Paste / Select All ---
+  id edit_item =
+      objc::msg_send<id>(objc::get_class("NSMenuItem"), objc::selector("new"));
+  objc::msg_send<void>(menubar, objc::selector("addItem:"), edit_item);
+  id edit_menu = objc::msg_send<id>(
+      objc::msg_send<id>(objc::get_class("NSMenu"), objc::selector("alloc")),
+      objc::selector("initWithTitle:"), cocoa::NSString_stringWithUTF8String("Edit"));
+  objc::msg_send<void>(edit_menu, objc::selector("addItemWithTitle:action:keyEquivalent:"),
+                       cocoa::NSString_stringWithUTF8String("Undo"),
+                       objc::selector("undo:"), cocoa::NSString_stringWithUTF8String("z"));
+  // 大写 "Z" 表示 Cmd+Shift+Z（keyEquivalent 大小写决定是否带 Shift）。
+  objc::msg_send<void>(edit_menu, objc::selector("addItemWithTitle:action:keyEquivalent:"),
+                       cocoa::NSString_stringWithUTF8String("Redo"),
+                       objc::selector("redo:"), cocoa::NSString_stringWithUTF8String("Z"));
+  objc::msg_send<void>(edit_menu, objc::selector("addItem:"),
+                       objc::msg_send<id>(objc::get_class("NSMenuItem"),
+                                          objc::selector("separatorItem")));
+  objc::msg_send<void>(edit_menu, objc::selector("addItemWithTitle:action:keyEquivalent:"),
+                       cocoa::NSString_stringWithUTF8String("Cut"),
+                       objc::selector("cut:"), cocoa::NSString_stringWithUTF8String("x"));
+  objc::msg_send<void>(edit_menu, objc::selector("addItemWithTitle:action:keyEquivalent:"),
+                       cocoa::NSString_stringWithUTF8String("Copy"),
+                       objc::selector("copy:"), cocoa::NSString_stringWithUTF8String("c"));
+  objc::msg_send<void>(edit_menu, objc::selector("addItemWithTitle:action:keyEquivalent:"),
+                       cocoa::NSString_stringWithUTF8String("Paste"),
+                       objc::selector("paste:"), cocoa::NSString_stringWithUTF8String("v"));
+  objc::msg_send<void>(edit_menu, objc::selector("addItemWithTitle:action:keyEquivalent:"),
+                       cocoa::NSString_stringWithUTF8String("Select All"),
+                       objc::selector("selectAll:"), cocoa::NSString_stringWithUTF8String("a"));
+  objc::msg_send<void>(edit_item, objc::selector("setSubmenu:"), edit_menu);
+
+  // 挂到应用主菜单
+  objc::msg_send<void>(cocoa::NSApplication_get_sharedApplication(),
+                       objc::selector("setMainMenu:"), menubar);
+#endif
 }
 
 } // extern "C"

@@ -60,6 +60,11 @@ int vtauri_wv_set_title(vtauri_wv_t w, const char *title);
 /* 设置窗口尺寸；hints 为 webview_hint_t（0 = WEBVIEW_HINT_NONE）。 */
 int vtauri_wv_set_size(vtauri_wv_t w, int width, int height, int hints);
 
+/* 安装标准 macOS 应用菜单栏（App 菜单：About/Quit；Edit 菜单：Undo/Redo/Cut/Copy/Paste/Select All）。
+ * 仅 macOS 实现；webview 库不自建菜单，缺菜单会导致 Cmd+Q 与复制粘贴快捷键失效。
+ * 应在 vtauri_wv_create 之后、vtauri_wv_run 之前调用。 */
+void vtauri_mac_install_app_menu(const char *app_name);
+
 #ifdef __cplusplus
 }
 #endif

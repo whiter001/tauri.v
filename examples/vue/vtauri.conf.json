@@ -1,0 +1,16 @@
+{
+  "productName": "vtauri-vue",
+  "identifier": "com.vlang.vtauri.vue",
+  "version": "0.1.0",
+  "app": {
+    "windows": [
+      {
+        "title": "vtauri vue example",
+        "width": 880,
+        "height": 620,
+        "center": true,
+        "resizable": true
+      }
+    ]
+  }
+}

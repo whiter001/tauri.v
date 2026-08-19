@@ -1,15 +1,11 @@
 /*
  * webview_bridge.cc — vtauri 与 webview/webview 库的 C++ 桥接实现
  *
- * 本文件是 vtauri 中唯一需要 C++ 编译器（g++）的源文件。
+ * 本文件是 vtauri 中唯一需要 C++ 编译器的源文件，由 webview_bridge.cpp
+ * `#include`（V 的 thirdparty object builder 在 `v -cc msvc` 时自动用 cl 编译
+ * 为 webview_bridge.obj 并链接）。
  * 它 #include webview/webview.h（header-only 的 C++ 实现），
  * 并将 C API（见 vtauri_webview.h）转发给 webview 库。
- *
- * 构建：
- *   x86_64-w64-mingw32-g++ -std=c++17 -I native \
- *       -c native/webview_bridge.cc -o native/webview_bridge.o
- *
- * 之后 vtauri 的 V 代码以 -lstdc++ 链接该 .o 即可。
  *
  * License: MIT
  */

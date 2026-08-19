@@ -15,13 +15,15 @@
 | 命令系统 | `vtauri/command.v` | 命令注册与分发 | ✅ |
 | 应用主类 | `vtauri/app.v` | 整合各组件 | ✅ |
 | 前端 API | `js/vtauri.js` | `invoke` / `listen` / `emit` | ✅ |
-| 示例 | `examples/hello` | 最小可运行应用 | ✅（可交叉编译 `.exe`） |
-| C++ 桥 | `native/webview_bridge.cc` / `native/webview_bridge.cpp` | 把 webview 库暴露为稳定 C 接口（g++ 交叉编 `.o` / MSVC 本机编 `.obj`） | ✅ |
+| 示例 | `examples/hello` | 最小可运行应用（原生 HTML） | ✅（可编译 `.exe`） |
+| 示例 | `examples/vue` | Vue 3 + Vite 前端示例（单文件构建 / dev 模式） | ✅（可编译 `.exe`） |
+| 示例 | `examples/react` | React 19 + Vite 前端示例（单文件构建 / dev 模式） | ✅（可编译 `.exe`） |
+| 示例 | `examples/remote` | 远程 URL 加载示例（`load_url` 嵌套 vlang.io） | ✅（可编译 `.exe`） |
+| C++ 桥 | `native/webview_bridge.cpp`（`#include` 实现于 `.cc`） | 把 webview 库暴露为稳定 C 接口（MSVC 编译为 `.obj`） | ✅ |
 
 ## 环境
 
 - V 0.5.2（`4a8793c`，从源码最新编译）
-- Windows 交叉编译：`x86_64-w64-mingw32-g++`（MinGW-w64，含 C++ 编译器），用 `native/webview_bridge.cc` 编出 `webview_bridge.o`
 - Windows 本机编译：安装 MSVC（Visual Studio / Build Tools），用 `v -cc msvc`，由 `native/webview_bridge.cpp` 编出 `webview_bridge.obj`
 - 目标机需安装 [WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/)（Win10/11 通常已内置）
 
@@ -39,19 +41,47 @@ Windows 本机建议使用 MSVC：
 v -cc msvc test vtauri
 ```
 
-### 2. 交叉编译示例为 Windows 可执行文件
+### 2. 编译示例为 Windows 可执行文件（MSVC）
 
-```bash
-bash scripts/build_hello_windows.sh
-# ① 用 MinGW g++ 编译 native/webview_bridge.cc（C++ 桥）
-# ② 用 V 交叉编译 examples/hello 为 hello.exe
-# 生成 PE32+ x86-64 hello.exe
-```
-
-如果是在 Windows 本机使用 MSVC：
+hello 示例（原生 HTML 前端）：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/build_hello_msvc.ps1 -Run
+# ① 自动准备 WebView2 SDK 头文件
+# ② 用 V + MSVC 编译 examples/hello 为 hello.exe（生成 PE32+ x86-64）
+```
+
+Vue / React 示例（前端是标准 Vite 工程，构建为单文件后嵌入 exe）：
+
+```powershell
+# 一键：npm install -> vite build -> MSVC 编译 exe
+powershell -ExecutionPolicy Bypass -File scripts/build_examples_msvc.ps1 -Example all   # 或 vue / react
+powershell -ExecutionPolicy Bypass -File scripts/build_examples_msvc.ps1 -Example vue -Run
+
+# 只构建前端（生成 examples/vue|react/frontend/dist/index.html）
+bash scripts/build_example_frontends.sh all        # 或 vue / react
+```
+
+Vue / React 示例支持两种加载模式：
+
+- **打包模式（默认）**：加载编译期内嵌的 `frontend/dist/index.html`；
+- **开发模式（start 模式 / localhost 加载）**：设置环境变量 `VTAURI_DEV_URL` 后，改为用 `load_url` 加载本地 Vite dev server，前端改动即时生效：
+
+```powershell
+# 终端 1：启动 Vite dev server
+cd examples/vue/frontend
+npm run dev
+
+# 终端 2：指定 dev URL 再启动应用（Linux/macOS 用 VTAURI_DEV_URL=...）
+set VTAURI_DEV_URL=http://localhost:5173
+..\vue.exe        # 或 examples/react 下 react.exe
+```
+
+远程加载示例（`load_url` 直接嵌套远程页面，默认 vlang.io）：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/build_examples_msvc.ps1 -Example remote -Run
+# 自定义 URL：set VTAURI_REMOTE_URL=https://example.com
 ```
 
 ### 3. 在 Linux 上运行示例（窗口为桩，验证核心逻辑）
@@ -93,6 +123,43 @@ fn main() {
 ```js
 const result = await window.__VTauri.invoke('greet', 'whiter');
 ```
+
+## 前端框架示例（Vue / React）
+
+`examples/vue` 与 `examples/react` 是完整的 **Vite 前端工程 + V 后端** 示例：
+
+- 前端：标准 Vite 工程（`frontend/`），用 `vite-plugin-singlefile` 把构建产物内联为单个 `dist/index.html`；
+- 集成：`frontend/src/vtauri.js` 由构建脚本从 `js/vtauri.js` 拷贝，`main.js(x)` 里 `import './vtauri.js'` 挂载 `window.__VTauri`；
+- 后端：`main.v` 用 `$embed_file('frontend/dist/index.html')` 编译期嵌入，`load_html` 渲染；
+- 命令：注册 `greet`（字符串）、`add`（JSON 对象参数）、`info`（JSON 对象返回），前端按钮逐一调用测试 IPC。
+
+目录结构：
+
+```
+examples/vue/                 examples/react/
+  main.v                        main.v
+  vtauri.conf.json              vtauri.conf.json
+  frontend/                     frontend/
+    package.json                  package.json
+    vite.config.js                vite.config.js
+    index.html                    index.html
+    src/
+      main.js                     main.jsx
+      App.vue                     App.jsx
+      vtauri.js                   vtauri.js
+```
+
+开发调试前端时可直接 `cd examples/vue/frontend && npm run dev`，浏览器里会提示「未检测到 vtauri 运行时」，即 `__VTauri` 仅在 vtauri 窗口内注入。
+
+**start 模式（localhost 加载）**：把 `VTAURI_DEV_URL=http://localhost:5173` 传给 `vue.exe` / `react.exe`，应用窗口会直接加载本地 Vite dev server（`app.load_url`），前端改动即时生效、无需重新编译 exe。
+
+## 远程加载示例（examples/remote）
+
+`examples/remote` 演示 `load_url` 远程加载方案：WebView 不渲染内嵌 HTML，而是直接导航到一个远程 URL，默认嵌套 [vlang.io](https://vlang.io)（V 语言官网）。
+
+- 默认 URL 为 `https://vlang.io`，可通过环境变量 `VTAURI_REMOTE_URL` 覆盖为任意地址；
+- 原生桥的 `__vtauriInvoke` 会在每次文档加载时注入，远程页面只要引入了 `js/vtauri.js`，依然能调用后端注册的命令；
+- 构建：`powershell -ExecutionPolicy Bypass -File scripts/build_examples_msvc.ps1 -Example remote -Run`（remote 无 frontend 目录，跳过前端构建）。
 
 ## 架构对应
 

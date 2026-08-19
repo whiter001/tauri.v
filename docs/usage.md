@@ -18,23 +18,27 @@ make
 sudo ./v symlink
 ```
 
-### 1.2 Windows 交叉编译工具（Linux 上开发 Windows 应用时）
+### 1.2 Windows 编译工具（MSVC）
 
-在 Linux 上交叉编译 Windows `.exe` 需要 MinGW（含 C++ 编译器，因为 vtauri 的 WebView 集成依赖一个 C++ 桥）：
+vtauri 的 WebView 集成依赖一个 C++ 桥，Windows 上编译 `.exe` 需要 **MSVC**
+（Visual Studio 或 Build Tools，含 C++ 工作负载）。V 的 `v -cc msvc` 会自动发现
+已安装的 MSVC 工具链，无需手动运行 `vcvars64.bat`。
 
-```bash
-# Debian / Ubuntu
-sudo apt-get install -y g++-mingw-w64-x86-64
+```powershell
+# 验证 MSVC 是否可用
+v -cc msvc -o hello.exe main.v
 ```
 
-在 Windows 本机上开发则无需此工具，直接用 `v -os windows` 或默认编译即可。
+> Linux / macOS 上无法编译 Windows 目标（vtauri 不再提供 MinGW 交叉编译方式）；
+> 请直接在 Windows 本机使用 MSVC 构建。
 
 ### 1.3 项目依赖
 
 vtauri 的 V 代码除 V 标准库外**无外部依赖**（`v.mod` 的 `dependencies` 为空）。
 为渲染 Web 前端，vtauri 集成了第三方 **webview/webview** 库（MIT，头文件已 vendored 在
-`native/webview/`，内部封装 WebView2），仅需在构建时用 C++ 编译器把
-`native/webview_bridge.cc`（g++ 交叉）或 `native/webview_bridge.cpp`（MSVC 本机）编译为一个对象文件（`.o` / `.obj`）即可。
+`native/webview/`，内部封装 WebView2）。C++ 桥的实现位于
+`native/webview_bridge.cpp`（`#include` 了 `webview_bridge.cc` 的实现），
+由 V 的 thirdparty object builder 在 `v -cc msvc` 时自动用 cl 编译为 `webview_bridge.obj` 并链接。
 
 ## 2. 目录结构
 
@@ -52,15 +56,18 @@ vtauri/            # 框架核心（库模块 vtauri）
 native/            # WebView C++ 集成
   webview/         # vendored 的 webview/webview 头文件（MIT）
   vtauri_webview.h # V 侧 include 的 C 桥接接口
-  webview_bridge.cc # C++ 桥实现（g++ 交叉编译为 .o）
-  webview_bridge.cpp# MSVC 本机编译兼容包装（编译为 .obj）
+  webview_bridge.cc # C++ 桥实现（由 webview_bridge.cpp include）
+  webview_bridge.cpp# MSVC 编译入口（V 的 thirdparty builder 自动编译为 .obj）
 js/
   vtauri.js        # 前端 API（invoke / listen / emit）
 examples/
-  hello/           # 最小可运行示例
+  hello/           # 最小可运行示例（原生 HTML）
+  vue/             # Vue 3 + Vite 前端示例
+  react/           # React + Vite 前端示例
 scripts/
-  build_webview_bridge.sh # 编译 C++ 桥
-  build_hello_windows.sh  # 一键交叉编译示例
+  build_hello_msvc.ps1     # 一键用 MSVC 构建 hello 示例
+  build_examples_msvc.ps1  # 一键用 MSVC 构建 vue / react 示例
+  build_example_frontends.sh # 构建 vue / react 前端（vite build）
 ```
 
 > **注意**：`vtauri/` 是一个纯 V 库模块，请勿在其中放置 `module main` 的入口文件，
@@ -75,8 +82,8 @@ scripts/
 cd examples/hello
 v run main.v
 
-# 交叉编译为 Windows 可执行文件（先编译 C++ 桥，再交叉编译）
-bash scripts/build_hello_windows.sh
+# Windows 上用 MSVC 编译为可执行文件
+powershell -ExecutionPolicy Bypass -File scripts/build_hello_msvc.ps1
 # 产出 examples/hello/hello.exe（PE32+ x86-64）
 ```
 
@@ -255,10 +262,10 @@ const sum = await window.__VTauri.invoke('add', { a: 20, b: 22 });
 | 场景 | 命令 | 说明 |
 |------|------|------|
 | Linux 本地运行 | `cd examples/hello && v run main.v` | 窗口为桩实现，验证核心逻辑 |
-| 编译 C++ 桥（g++ 交叉） | `bash scripts/build_webview_bridge.sh` | 生成 `native/webview_bridge.o` |
-| 编译 C++ 桥（MSVC 本机） | `powershell scripts/build_hello_msvc.ps1` | 由脚本编译 `webview_bridge.cpp` 为 `.obj` |
-| 交叉编译 Windows | `bash scripts/build_hello_windows.sh` | 一键编译桥 + 交叉编译为 PE32+ |
-| 运行库测试 | `v test vtauri` | 全部单元测试 |
+| 编译 hello 示例（MSVC） | `powershell scripts/build_hello_msvc.ps1` | 自动编译 `webview_bridge.cpp` 为 `.obj` 并链接 |
+| 编译 vue/react 示例（MSVC） | `powershell scripts/build_examples_msvc.ps1 -Example all` | 构建前端 + MSVC 编译为 PE32+ |
+| 构建 vue/react 前端 | `bash scripts/build_example_frontends.sh all` | `vite build` 内联为单 `dist/index.html` |
+| 运行库测试 | `v -cc msvc test vtauri` | 全部单元测试 |
 
 > **说明**：Windows 上运行 vtauri 应用时，WebView2 负责渲染前端页面并接管消息循环；
 > 目标机需安装 [WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/)（Win10/11 通常已内置）。
@@ -298,7 +305,7 @@ sudo apt-get install -y libgc-dev
 旧版本（骨架阶段）WebView2 渲染未实现，只显示空白 Win32 窗口。
 本仓库已改为集成 webview/webview 库（方案 A）：
 
-1. 确认已编译 C++ 桥：交叉编译用 `bash scripts/build_webview_bridge.sh`，Windows 本机 MSVC 用 `powershell scripts/build_hello_msvc.ps1`；
+1. 确认已用 MSVC 编译：`powershell scripts/build_hello_msvc.ps1` 或 `powershell scripts/build_examples_msvc.ps1 -Example all`；
 2. 确认目标机装有 WebView2 Runtime；
 3. 若仍空白，检查 `app.build()` 之后是否调用了 `app.load_html(...)` 加载入口页面，
    以及页面中是否正确内联了 `js/vtauri.js`（参考 `examples/hello/main.v`）。

@@ -2,11 +2,12 @@
 // 仅当编译目标为 Windows 时由 V 自动编译（文件后缀 _windows.v）。
 //
 // 实现方式：集成 webview/webview（单头文件 C++ 库，内部封装 WebView2）。
-// V 本身不直接 include 该 C++ 头文件，而是通过 native/webview_bridge.cc（C++ 桥）
-// 暴露的稳定 C 接口（见 native/vtauri_webview.h）来调用。该桥由 g++ 预编译为
-// webview_bridge.o，V 侧以 -lstdc++ 链接。
+// V 本身不直接 include 该 C++ 头文件，而是通过 native/webview_bridge.cpp（C++ 桥，
+// 内部 include webview_bridge.cc 的实现）暴露的稳定 C 接口（见 native/vtauri_webview.h）
+// 来调用。该桥由 V 的 thirdparty object builder 在 `v -cc msvc` 时自动用 cl 编译为
+// webview_bridge.obj 并链接。
 //
-// 构建前置：先用 g++ 编译 native/webview_bridge.cc（见 scripts/build_webview_bridge.sh）。
+// 构建要求：Windows 本机需安装 MSVC（Visual Studio / Build Tools），用 `v -cc msvc` 编译。
 
 module vtauri
 
@@ -14,13 +15,7 @@ import json2
 
 #flag windows -I @VMODROOT/native
 #flag windows -lole32 -lshell32 -lshlwapi -luser32 -lversion
-$if msvc {
-	#flag windows @VMODROOT/native/webview_bridge.obj
-} $else {
-	#flag windows -Wno-incompatible-pointer-types
-	#flag windows @VMODROOT/native/webview_bridge.o
-	#flag windows -lstdc++
-}
+#flag windows @VMODROOT/native/webview_bridge.obj
 #include "vtauri_webview.h"
 
 // --- 桥接层 C 函数声明 ---

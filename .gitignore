@@ -10,3 +10,7 @@ examples/hello/hello.exe
 
 # playwright-mcp 调试产物
 .playwright-mcp/
+
+# 前端工程依赖与构建产物（Vite）
+examples/*/frontend/node_modules/
+examples/*/frontend/dist/

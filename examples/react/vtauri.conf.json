@@ -1,0 +1,16 @@
+{
+  "productName": "vtauri-react",
+  "identifier": "com.vlang.vtauri.react",
+  "version": "0.1.0",
+  "app": {
+    "windows": [
+      {
+        "title": "vtauri react example",
+        "width": 880,
+        "height": 620,
+        "center": true,
+        "resizable": true
+      }
+    ]
+  }
+}

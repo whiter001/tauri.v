@@ -1,11 +1,7 @@
 // main.v — vtauri 最小示例应用
 // 运行入口：读取配置 -> 构建 App -> 注册命令 -> 嵌入前端资源 -> 启动窗口。
 //
-// Windows 交叉编译（一键）：
-//   bash ../../scripts/build_hello_windows.sh
-//   等效于：先 sh ../../scripts/build_webview_bridge.sh（g++ 编译 C++ 桥），
-//          再 v -os windows -o hello.exe main.v
-// Windows 本机 MSVC：
+// Windows 本机编译（MSVC）：
 //   powershell -ExecutionPolicy Bypass -File ../../scripts/build_hello_msvc.ps1 -Run
 
 module main

@@ -22,6 +22,9 @@
     <h1>vtauri hello</h1>
     <p>由 V 语言实现的 Tauri 风格桌面框架示例</p>
     <button id="greetBtn">调用后端 greet</button>
+    <button id="dialogMsgBtn">弹出消息框</button>
+    <button id="dialogOpenBtn">打开文件</button>
+    <button id="dialogSaveBtn">保存文件</button>
     <output id="out">--</output>
   </div>
 
@@ -34,6 +37,36 @@
       try {
         // 调用 V 后端注册的 greet 命令
         var result = await window.__VTauri.invoke('greet', 'whiter');
+        out.textContent = result;
+      } catch (e) {
+        out.textContent = '错误: ' + e.message;
+      }
+    });
+    document.getElementById('dialogMsgBtn').addEventListener('click', async function () {
+      var out = document.getElementById('out');
+      out.textContent = '调用中...';
+      try {
+        var result = await window.__VTauri.invoke('dialog_msg', '');
+        out.textContent = result;
+      } catch (e) {
+        out.textContent = '错误: ' + e.message;
+      }
+    });
+    document.getElementById('dialogOpenBtn').addEventListener('click', async function () {
+      var out = document.getElementById('out');
+      out.textContent = '调用中...';
+      try {
+        var result = await window.__VTauri.invoke('dialog_open', '');
+        out.textContent = result;
+      } catch (e) {
+        out.textContent = '错误: ' + e.message;
+      }
+    });
+    document.getElementById('dialogSaveBtn').addEventListener('click', async function () {
+      var out = document.getElementById('out');
+      out.textContent = '调用中...';
+      try {
+        var result = await window.__VTauri.invoke('dialog_save', '');
         out.textContent = result;
       } catch (e) {
         out.textContent = '错误: ' + e.message;

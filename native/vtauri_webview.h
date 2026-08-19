@@ -65,6 +65,17 @@ int vtauri_wv_set_size(vtauri_wv_t w, int width, int height, int hints);
  * 应在 vtauri_wv_create 之后、vtauri_wv_run 之前调用。 */
 void vtauri_mac_install_app_menu(const char *app_name);
 
+/* 弹出模态消息框（NSAlert，阻塞至用户点击）。仅 macOS 实现。 */
+void vtauri_mac_message_box(const char *title, const char *message);
+
+/* 打开文件对话框（NSOpenPanel，模态）。成功返回 malloc 分配的路径 UTF-8 字符串
+ *（调用方负责 free）；用户取消返回 NULL。filters_csv 为逗号分隔的扩展名（如 "png,jpg"），
+ * 空串表示不过滤。仅 macOS 实现。 */
+char *vtauri_mac_open_file(const char *title, const char *filters_csv);
+
+/* 保存文件对话框（NSSavePanel，模态）。返回值约定同上；default_name 为默认文件名。 */
+char *vtauri_mac_save_file(const char *title, const char *default_name);
+
 #ifdef __cplusplus
 }
 #endif

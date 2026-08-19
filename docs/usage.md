@@ -370,7 +370,59 @@ xcrun stapler staple "Name.app"
 - 菜单栏已自动安装（About/Quit + Edit），如需自定义菜单属后续项；
 - dmg 制作与公证流程未自动化。
 
-## 8. 架构对应
+## 8. 原生对话框
+
+对应 Tauri 的 `tauri-plugin-dialog`，vtauri 提供三个原生系统对话框 API
+（仅 macOS 实现，其他平台为桩：打印调用信息并返回空串），实现在
+`vtauri/dialog.v` / `vtauri/dialog_darwin.v`，由桥接层 `native/webview_bridge.cc`
+驱动 AppKit 原生控件（NSAlert / NSOpenPanel / NSSavePanel）：
+
+```v
+import vtauri
+
+// 消息框：模态阻塞，无返回值
+vtauri.message_box('提示', '确认要退出吗？')
+
+// 打开文件对话框：返回所选文件路径；用户取消返回空串
+path := vtauri.open_file_dialog('选择文件', ['png', 'jpg', 'txt'])
+// filters 为扩展名列表（不带点），空数组表示不过滤任何类型
+
+// 保存文件对话框：返回目标路径；用户取消返回空串
+path := vtauri.save_file_dialog('保存文件', 'untitled.txt')
+// default_name 为对话框默认文件名
+```
+
+> **模态阻塞说明**：三个对话框均为模态阻塞调用（macOS 侧 `runModal`），对话框打开期间
+> 主线程阻塞在原生对话框上、IPC 不会返回，页面显示「调用中...」属正常现象，
+> 用户点按/回车/Escape 关闭对话框后自动恢复。
+
+`examples/hello` 演示了完整用法：后端注册 `dialog_msg` / `dialog_open` / `dialog_save`
+三个命令，前端按钮 `invoke` 后把结果显示到页面：
+
+```v
+// 后端注册（examples/hello/main.v）
+app.register_command('dialog_msg', vtauri.make_string_command(fn (args string) string {
+	vtauri.message_box('提示', '来自 V 后端的消息框')
+	return '已显示'
+}))
+app.register_command('dialog_open', vtauri.make_string_command(fn (args string) string {
+	path := vtauri.open_file_dialog('选择文件', ['png', 'jpg', 'txt'])
+	if path == '' {
+		return '已取消'
+	}
+	return path
+}))
+```
+
+```js
+// 前端调用（examples/hello/index.html）
+var result = await window.__VTauri.invoke('dialog_open', '');
+```
+
+真机验证结果：消息框 Enter → 页面显示「已显示」；打开文件 Escape → 页面显示「已取消」；
+保存文件 Enter → 页面显示真实路径（如 `/Users/byf/Documents/untitled.txt`）。
+
+## 9. 架构对应
 
 | Tauri 组件 | vtauri 对应 | 说明 |
 |-----------|------------|------|
@@ -381,7 +433,7 @@ xcrun stapler staple "Name.app"
 | `tauri.conf.json` | `vtauri/config.v` | 应用配置解析 |
 | `@tauri-apps/api` | `js/vtauri.js` | 前端 `invoke` / `listen` / `emit` |
 
-## 9. 常见问题（FAQ）
+## 10. 常见问题（FAQ）
 
 ### Q1: `v run main.v` 报 `bad module definition: v imports module "vtauri"...`
 

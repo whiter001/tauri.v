@@ -35,6 +35,28 @@ fn main() {
 		return vtauri_encode_sum(nums)
 	})
 
+	// 4b. 注册命令：dialog_msg / dialog_open / dialog_save 原生系统对话框
+	app.register_command('dialog_msg', vtauri.make_string_command(fn (args string) string {
+		vtauri.message_box('提示', '来自 V 后端的消息框')
+		return '已显示'
+	}))
+
+	app.register_command('dialog_open', vtauri.make_string_command(fn (args string) string {
+		path := vtauri.open_file_dialog('选择文件', ['png', 'jpg', 'txt'])
+		if path == '' {
+			return '已取消'
+		}
+		return path
+	}))
+
+	app.register_command('dialog_save', vtauri.make_string_command(fn (args string) string {
+		path := vtauri.save_file_dialog('保存文件', 'untitled.txt')
+		if path == '' {
+			return '已取消'
+		}
+		return path
+	}))
+
 	// 5. 构建窗口 + WebView
 	app.build() or {
 		eprintln('build failed: ${err}')

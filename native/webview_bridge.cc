@@ -15,6 +15,7 @@
 #include "webview/webview.h"
 #include "vtauri_webview.h"
 
+#include <cstring>
 #include <string>
 
 extern "C" {
@@ -135,6 +136,130 @@ void vtauri_mac_install_app_menu(const char *app_name) {
   // 挂到应用主菜单
   objc::msg_send<void>(cocoa::NSApplication_get_sharedApplication(),
                        objc::selector("setMainMenu:"), menubar);
+#endif
+}
+
+void vtauri_mac_message_box(const char *title, const char *message) {
+#if defined(WEBVIEW_PLATFORM_DARWIN)
+  namespace objc = webview::detail::objc;
+  namespace cocoa = webview::detail::cocoa;
+
+  objc::autoreleasepool arp;
+
+  // 防御性确保 NSApp 存在：vtauri 流程里 NSApp 已由 webview 库创建，
+  // 这里保险处理，使独立 V 程序直接调用对话框也能工作。
+  cocoa::NSApplication_setActivationPolicy(
+      cocoa::NSApplication_get_sharedApplication(),
+      cocoa::NSApplicationActivationPolicyRegular);
+
+  // NSAlert 模态消息框：alloc/init 创建后直接 runModal 阻塞至用户点击。
+  id alert = objc::msg_send<id>(
+      objc::msg_send<id>(objc::get_class("NSAlert"), objc::selector("alloc")),
+      objc::selector("init"));
+  objc::msg_send<void>(alert, objc::selector("setMessageText:"),
+                       cocoa::NSString_stringWithUTF8String(title));
+  objc::msg_send<void>(alert, objc::selector("setInformativeText:"),
+                       cocoa::NSString_stringWithUTF8String(message));
+  objc::msg_send<void>(alert, objc::selector("addButtonWithTitle:"),
+                       cocoa::NSString_stringWithUTF8String("OK"));
+  // runModal 返回 NSModalResponse（NSInteger=long），这里只需阻塞到点击，忽略返回值。
+  objc::msg_send<long>(alert, objc::selector("runModal"));
+#endif
+}
+
+char *vtauri_mac_open_file(const char *title, const char *filters_csv) {
+#if defined(WEBVIEW_PLATFORM_DARWIN)
+  namespace objc = webview::detail::objc;
+  namespace cocoa = webview::detail::cocoa;
+
+  objc::autoreleasepool arp;
+
+  // 防御性确保 NSApp 存在（同 vtauri_mac_message_box）。
+  cocoa::NSApplication_setActivationPolicy(
+      cocoa::NSApplication_get_sharedApplication(),
+      cocoa::NSApplicationActivationPolicyRegular);
+
+  id panel = cocoa::NSOpenPanel_openPanel();
+  objc::msg_send<void>(panel, objc::selector("setTitle:"),
+                       cocoa::NSString_stringWithUTF8String(title));
+  cocoa::NSOpenPanel_set_canChooseFiles(panel, true);
+  cocoa::NSOpenPanel_set_canChooseDirectories(panel, false);
+  cocoa::NSOpenPanel_set_allowsMultipleSelection(panel, false);
+
+  // filters_csv（如 "png,jpg,txt"）切成扩展名数组；空串/空扩展名跳过。
+  if (filters_csv != nullptr && filters_csv[0] != '\0') {
+    id types = objc::msg_send<id>(
+        objc::msg_send<id>(objc::get_class("NSMutableArray"),
+                           objc::selector("alloc")),
+        objc::selector("init"));
+    std::string csv(filters_csv);
+    std::string::size_type start = 0;
+    while (true) {
+      std::string::size_type comma = csv.find(',', start);
+      std::string ext = (comma == std::string::npos)
+                            ? csv.substr(start)
+                            : csv.substr(start, comma - start);
+      if (!ext.empty()) {
+        objc::msg_send<void>(types, objc::selector("addObject:"),
+                             cocoa::NSString_stringWithUTF8String(ext));
+      }
+      if (comma == std::string::npos) {
+        break;
+      }
+      start = comma + 1;
+    }
+    objc::msg_send<void>(panel, objc::selector("setAllowedFileTypes:"), types);
+  }
+
+  // runModal 返回 NSModalResponse：1 表示 NSModalResponseOK。
+  long result = objc::msg_send<long>(panel, objc::selector("runModal"));
+  if (result == cocoa::NSModalResponseOK) {
+    id url = objc::msg_send<id>(panel, objc::selector("URL"));
+    id path = objc::msg_send<id>(url, objc::selector("path"));
+    const char *utf8 = cocoa::NSString_get_UTF8String(path);
+    if (utf8 != nullptr) {
+      return strdup(utf8); // malloc 分配，调用方负责 free
+    }
+  }
+  return nullptr;
+#else
+  return nullptr;
+#endif
+}
+
+char *vtauri_mac_save_file(const char *title, const char *default_name) {
+#if defined(WEBVIEW_PLATFORM_DARWIN)
+  namespace objc = webview::detail::objc;
+  namespace cocoa = webview::detail::cocoa;
+
+  objc::autoreleasepool arp;
+
+  // 防御性确保 NSApp 存在（同 vtauri_mac_message_box）。
+  cocoa::NSApplication_setActivationPolicy(
+      cocoa::NSApplication_get_sharedApplication(),
+      cocoa::NSApplicationActivationPolicyRegular);
+
+  id panel = objc::msg_send<id>(objc::get_class("NSSavePanel"),
+                                objc::selector("savePanel"));
+  objc::msg_send<void>(panel, objc::selector("setTitle:"),
+                       cocoa::NSString_stringWithUTF8String(title));
+  if (default_name != nullptr && default_name[0] != '\0') {
+    objc::msg_send<void>(panel, objc::selector("setNameFieldStringValue:"),
+                         cocoa::NSString_stringWithUTF8String(default_name));
+  }
+
+  long result = objc::msg_send<long>(panel, objc::selector("runModal"));
+  if (result == cocoa::NSModalResponseOK) {
+    id url = objc::msg_send<id>(panel, objc::selector("URL"));
+    id path = objc::msg_send<id>(url, objc::selector("path"));
+    const char *utf8 = cocoa::NSString_get_UTF8String(path);
+    if (utf8 != nullptr) {
+      return strdup(utf8); // malloc 分配，调用方负责 free
+    }
+  }
+  return nullptr;
+#else
+  return nullptr;
 #endif
 }
 

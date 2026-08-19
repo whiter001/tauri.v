@@ -11,8 +11,6 @@
 
 module vtauri
 
-import json2
-
 #flag windows -I @VMODROOT/native
 #flag windows -lole32 -lshell32 -lshlwapi -luser32 -lversion
 #flag windows @VMODROOT/native/webview_bridge.obj
@@ -33,13 +31,6 @@ fn C.vtauri_wv_return(w voidptr, id &char, status int, result &char) int
 fn C.CoInitializeEx(pv_reserved voidptr, dw_co_init u32) int
 
 const coinit_apartmentthreaded = u32(0x2) // COINIT_APARTMENTTHREADED
-
-// 绑定回调上下文：同时持有 webview 句柄与 App 指针，作为 userdata 传给 webview_bind。
-struct WvBindCtx {
-mut:
-	webview voidptr
-	app     &App
-}
 
 // attach_windows 创建并嵌入 WebView2。
 fn (mut wv WebView) attach_windows() ! {
@@ -111,32 +102,6 @@ fn (mut wv WebView) bind_invoke_windows(app &App) ! {
 		wv.bind_ctx = unsafe { nil }
 		return error('vtauri_wv_bind failed: ${err}')
 	}
-}
-
-// vtauri_on_invoke 是页面调用 __vtauriInvoke(...) 时触发的 C 回调。
-// req 是 JS 实参的 JSON 数组字符串（形如 ["<ipcRequestJson>"]）。
-fn vtauri_on_invoke(id &char, req &char, userdata voidptr) {
-	ctx := unsafe { &WvBindCtx(userdata) }
-	id_str := unsafe { cstring_to_vstring(id) }
-	req_str := unsafe { cstring_to_vstring(req) }
-
-	// 取出 IpcRequest JSON（webview 会把实参包装成 JSON 数组）
-	req_json := bind_extract_arg0(req_str)
-
-	mut app := ctx.app
-	resp_json := app.handle_ipc(req_json)
-
-	// 用 webview 内部生成的 seq(id) 兑现前端 Promise
-	C.vtauri_wv_return(ctx.webview, &char(id_str.str), 0, &char(resp_json.str))
-}
-
-// bind_extract_arg0 从 JS 实参的 JSON 数组字符串中取出第 0 个元素。
-fn bind_extract_arg0(arr string) string {
-	items := json2.decode[[]string](arr) or { return '' }
-	if items.len > 0 {
-		return items[0]
-	}
-	return ''
 }
 
 // run_windows 进入 webview 的消息循环（阻塞，直到窗口关闭）。

@@ -57,4 +57,13 @@ int vtauri_wv_return(vtauri_wv_t w, const char *id, int status,
                                          status, result));
 }
 
+int vtauri_wv_set_title(vtauri_wv_t w, const char *title) {
+  return static_cast<int>(webview_set_title(reinterpret_cast<webview_t>(w), title));
+}
+
+int vtauri_wv_set_size(vtauri_wv_t w, int width, int height, int hints) {
+  return static_cast<int>(webview_set_size(reinterpret_cast<webview_t>(w), width,
+                                           height, static_cast<webview_hint_t>(hints)));
+}
+
 } // extern "C"

@@ -10,10 +10,11 @@
 - [x] **Phase 4：前端 JS API** — `js/vtauri.js` 提供 `invoke` / `listen` / `emit`
 - [x] **Phase 5：示例 + Windows 交叉编译** — `examples/hello` 最小可运行应用，配套交叉编译脚本
 - [x] **Phase 6：WebView 渲染** — 集成 webview/webview 库（封装 WebView2），通过 `set_html` 渲染；支持 MSVC 本机编译与窗口尺寸自适应
+- [x] **Phase 7：macOS 支持** — `vtauri/webview_darwin.v` 基于 webview/webview 的 WKWebView 后端，窗口由库自建 NSWindow；本机编译、渲染与 IPC 已验证
 
 ## 待办
 
 - [ ] **WebView2 真机渲染验证**（需 Windows 主机 + WebView2 运行时）
 - [ ] 系统托盘、原生菜单、通知
-- [ ] 跨平台（Linux / macOS）
+- [ ] 跨平台（Linux）
 - [ ] 应用打包器（NSIS / MSI）

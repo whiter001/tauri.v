@@ -54,6 +54,12 @@ int vtauri_wv_bind(vtauri_wv_t w, const char *name, vtauri_wv_bind_cb cb, void *
 /* 兑现一个绑定调用：status=0 成功（result 需为合法 JSON 或空串），否则失败。 */
 int vtauri_wv_return(vtauri_wv_t w, const char *id, int status, const char *result);
 
+/* 设置窗口标题（仅对库自建窗口的平台有意义，如 macOS）。 */
+int vtauri_wv_set_title(vtauri_wv_t w, const char *title);
+
+/* 设置窗口尺寸；hints 为 webview_hint_t（0 = WEBVIEW_HINT_NONE）。 */
+int vtauri_wv_set_size(vtauri_wv_t w, int width, int height, int hints);
+
 #ifdef __cplusplus
 }
 #endif

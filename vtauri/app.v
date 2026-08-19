@@ -24,8 +24,9 @@ pub fn new_app(cfg AppConfig) App {
 
 // build 使用配置创建主窗口，附着 WebView 并接通 IPC，完成应用装配。
 // 完成后：
-//   - 创建并显示原生窗口；
+//   - 创建并显示原生窗口（Windows 上为 Win32 窗口；macOS 上由 webview 库自建 NSWindow）；
 //   - 在 Windows 上创建 WebView2 并嵌入窗口，把 __vtauriInvoke 暴露为页面全局函数；
+//     在 macOS 上由 webview 库自建 NSWindow 并应用配置的标题/尺寸；
 //   - 之后由调用方通过 load_html / load_url 加载入口页面。
 pub fn (mut app App) build() ! {
 	c := app.config.main_window
@@ -34,6 +35,9 @@ pub fn (mut app App) build() ! {
 
 	mut wv := new_webview(w.handle)
 	wv.attach()!
+	$if macos {
+		wv.set_window_props(c.title, int(c.width), int(c.height), c.center)
+	}
 	wv.bind_invoke(&app)!
 	app.webview = wv
 	app.started = true

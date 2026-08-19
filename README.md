@@ -9,8 +9,8 @@
 | 模块 | 文件 | 说明 | 状态 |
 |------|------|------|------|
 | 配置系统 | `vtauri/config.v` | 解析 `vtauri.conf.json` | ✅ |
-| 窗口系统 | `vtauri/window.v` / `window_windows.v` | Win32 `CreateWindowExW` + 消息循环 | ✅ |
-| WebView 渲染 | `vtauri/webview.v` + `webview_windows.v` | 集成 webview/webview（封装 WebView2） | ✅（需 Windows 真机联调） |
+| 窗口系统 | `vtauri/window.v` / `window_windows.v` | Win32 `CreateWindowExW` + 消息循环（macOS 上窗口由 webview 库自建 NSWindow，window.v 桩） | ✅ |
+| WebView 渲染 | `vtauri/webview.v` + `webview_windows.v` / `webview_darwin.v` | 集成 webview/webview（Windows 封装 WebView2，macOS 封装 WKWebView） | ✅（Windows 需真机联调；macOS 已验证） |
 | IPC 协议 | `vtauri/ipc.v` | 前端 ↔ 后端消息编解码 | ✅ |
 | 命令系统 | `vtauri/command.v` | 命令注册与分发 | ✅ |
 | 应用主类 | `vtauri/app.v` | 整合各组件 | ✅ |
@@ -26,6 +26,7 @@
 - V 0.5.2（`4a8793c`，从源码最新编译）
 - Windows 本机编译：安装 MSVC（Visual Studio / Build Tools），用 `v -cc msvc`，由 `native/webview_bridge.cpp` 编出 `webview_bridge.obj`
 - 目标机需安装 [WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/)（Win10/11 通常已内置）
+- macOS 本机编译：Xcode Command Line Tools 自带 clang++，无需额外依赖；V thirdparty builder 自动用 clang++ 编译 `native/webview_bridge.cpp` 为 `webview_bridge.o` 并链接 `-framework Cocoa -framework WebKit -lc++`
 
 ## 快速开始
 
@@ -84,13 +85,21 @@ powershell -ExecutionPolicy Bypass -File scripts/build_examples_msvc.ps1 -Exampl
 # 自定义 URL：set VTAURI_REMOTE_URL=https://example.com
 ```
 
-### 3. 在 Linux 上运行示例（窗口为桩，验证核心逻辑）
+### 3. 在 Linux/macOS 上运行示例
+
+macOS 上编译运行（弹出真实 WKWebView 窗口）：
 
 ```bash
-cd examples/hello
-v run main.v
+v -cc clang -o hello examples/hello        # 自动编译 C++ 桥并链接 Cocoa/WebKit
+cd examples/hello && ../../hello           # 或直接 -o 到该目录后运行
 # 输出：vtauri example "vtauri-hello" v0.1.0 starting...
 ```
+
+- **macOS**：真实 WKWebView 窗口（窗口由 webview 库自建 NSWindow），渲染与 IPC 可用；
+- **Linux**：仍为桩窗口，验证核心逻辑。
+
+> 也可用 `v run examples/hello`。注意 `examples/hello` 的 `main.v` 用相对路径读
+> `vtauri.conf.json`，需在 `examples/hello` 目录下运行（找不到配置时回退 `default_config`）。
 
 ## 使用方案
 

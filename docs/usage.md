@@ -1,6 +1,6 @@
 # vtauri 使用方案（Usage Guide）
 
-> 本文档介绍如何使用 **vtauri** 开发一个基于 V 语言、Tauri 风格的 Windows 桌面应用。
+> 本文档介绍如何使用 **vtauri** 开发一个基于 V 语言、Tauri 风格的桌面应用（正式支持 Windows / macOS，Linux 为桩验证）。
 > vtauri 采用「Web 前端 + 原生后端」架构：后端用 **V 语言**实现原生能力，前端用 Web 技术渲染，二者通过 IPC 通信。
 
 ## 1. 环境准备
@@ -32,7 +32,21 @@ v -cc msvc -o hello.exe main.v
 > Linux / macOS 上无法编译 Windows 目标（vtauri 不再提供 MinGW 交叉编译方式）；
 > 请直接在 Windows 本机使用 MSVC 构建。
 
-### 1.3 项目依赖
+### 1.3 macOS 编译工具（clang++）
+
+macOS 是正式支持平台，无需额外依赖：Xcode Command Line Tools 自带 clang++。
+V thirdparty builder 会自动用 clang++ 把 `native/webview_bridge.cpp` 编译为
+`webview_bridge.o` 并链接 `-framework Cocoa -framework WebKit -lc++`。
+
+```bash
+# macOS 本机编译示例
+v -cc clang -o hello examples/hello
+```
+
+行为差异：macOS 上窗口由 webview 库自建 NSWindow（`window.v` 为桩），
+窗口标题与尺寸来自 `vtauri.conf.json` 的 `app.windows[]` 配置。
+
+### 1.4 项目依赖
 
 vtauri 的 V 代码除 V 标准库外**无外部依赖**（`v.mod` 的 `dependencies` 为空）。
 为渲染 Web 前端，vtauri 集成了第三方 **webview/webview** 库（MIT，头文件已 vendored 在
@@ -45,10 +59,11 @@ vtauri 的 V 代码除 V 标准库外**无外部依赖**（`v.mod` 的 `dependen
 ```
 vtauri/            # 框架核心（库模块 vtauri）
   config.v         # 配置系统：解析 vtauri.conf.json
-  window.v         # 窗口抽象 + 跨平台桩
+  window.v         # 窗口抽象 + 跨平台桩（macOS 由 webview 库自建 NSWindow）
   window_windows.v # Win32 窗口实现（CreateWindowExW + 消息循环）
   webview.v        # WebView 抽象接口（跨平台调度）
   webview_windows.v# WebView Windows 实现（集成 webview/webview 库 + IPC）
+  webview_darwin.v # WebView macOS 实现（WKWebView，窗口由库自建 NSWindow）
   ipc.v            # IPC 消息协议
   command.v        # 命令注册与分发
   app.v            # App 主类（聚合各组件）
@@ -78,9 +93,12 @@ scripts/
 ### 3.1 直接运行示例
 
 ```bash
-# 编译并运行最小示例（Linux 上窗口为桩实现，打印启动信息）
+# 编译并运行最小示例（macOS 弹出真实 WKWebView 窗口；Linux 上窗口为桩实现，打印启动信息）
 cd examples/hello
 v run main.v
+
+# macOS 上编译为可执行文件（自动编译 C++ 桥并链接 Cocoa/WebKit）
+v -cc clang -o hello examples/hello
 
 # Windows 上用 MSVC 编译为可执行文件
 powershell -ExecutionPolicy Bypass -File scripts/build_hello_msvc.ps1
@@ -262,6 +280,7 @@ const sum = await window.__VTauri.invoke('add', { a: 20, b: 22 });
 | 场景 | 命令 | 说明 |
 |------|------|------|
 | Linux 本地运行 | `cd examples/hello && v run main.v` | 窗口为桩实现，验证核心逻辑 |
+| macOS 本地编译运行 | `v -cc clang -o hello examples/hello` | 自动编译 C++ 桥并链接 Cocoa/WebKit，弹出真实 WKWebView 窗口 |
 | 编译 hello 示例（MSVC） | `powershell scripts/build_hello_msvc.ps1` | 自动编译 `webview_bridge.cpp` 为 `.obj` 并链接 |
 | 编译 vue/react 示例（MSVC） | `powershell scripts/build_examples_msvc.ps1 -Example all` | 构建前端 + MSVC 编译为 PE32+ |
 | 构建 vue/react 前端 | `bash scripts/build_example_frontends.sh all` | `vite build` 内联为单 `dist/index.html` |
@@ -269,16 +288,16 @@ const sum = await window.__VTauri.invoke('add', { a: 20, b: 22 });
 
 > **说明**：Windows 上运行 vtauri 应用时，WebView2 负责渲染前端页面并接管消息循环；
 > 目标机需安装 [WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/)（Win10/11 通常已内置）。
-> Linux 上运行 vtauri 应用时窗口系统为桩实现，核心的配置解析、IPC、命令系统逻辑可完整验证；
-> 真正的 WebView2 渲染需在 Windows 运行时联调。
+> macOS 上运行 vtauri 应用时由 WKWebView 渲染，窗口由 webview 库自建 NSWindow，本机已验证；
+> Linux 上运行 vtauri 应用时窗口系统为桩实现，核心的配置解析、IPC、命令系统逻辑可完整验证。
 
 ## 7. 架构对应
 
 | Tauri 组件 | vtauri 对应 | 说明 |
 |-----------|------------|------|
 | `tauri` core | `vtauri/app.v` | 聚合运行时、配置、命令、窗口、WebView |
-| `tao` / `winit` | `vtauri/window.v` + `window_windows.v` | Win32 窗口创建与管理 |
-| `wry` / `WebView2` | `vtauri/webview.v` + `webview_windows.v` + `native/webview_bridge.cc` / `native/webview_bridge.cpp` | WebView2 渲染（集成 webview/webview 库） |
+| `tao` / `winit` | `vtauri/window.v` + `window_windows.v` | Win32 窗口创建与管理（macOS 上由 webview 库自建 NSWindow） |
+| `wry` / `WebView2` | `vtauri/webview.v` + `webview_windows.v` / `webview_darwin.v` + `native/webview_bridge.cc` / `native/webview_bridge.cpp` | WebView2 / WKWebView 渲染（集成 webview/webview 库） |
 | IPC / command | `vtauri/ipc.v` + `command.v` | 前后端消息编解码与命令分发 |
 | `tauri.conf.json` | `vtauri/config.v` | 应用配置解析 |
 | `@tauri-apps/api` | `js/vtauri.js` | 前端 `invoke` / `listen` / `emit` |

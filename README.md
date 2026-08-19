@@ -16,12 +16,13 @@
 | 应用主类 | `vtauri/app.v` | 整合各组件 | ✅ |
 | 前端 API | `js/vtauri.js` | `invoke` / `listen` / `emit` | ✅ |
 | 示例 | `examples/hello` | 最小可运行应用 | ✅（可交叉编译 `.exe`） |
-| C++ 桥 | `native/webview_bridge.cc` | 把 webview 库暴露为稳定 C 接口 | ✅（需 g++ 编译） |
+| C++ 桥 | `native/webview_bridge.cc` / `native/webview_bridge.cpp` | 把 webview 库暴露为稳定 C 接口（g++ 交叉编 `.o` / MSVC 本机编 `.obj`） | ✅ |
 
 ## 环境
 
 - V 0.5.2（`4a8793c`，从源码最新编译）
-- Windows 交叉编译：`x86_64-w64-mingw32-g++`（MinGW-w64，含 C++ 编译器）
+- Windows 交叉编译：`x86_64-w64-mingw32-g++`（MinGW-w64，含 C++ 编译器），用 `native/webview_bridge.cc` 编出 `webview_bridge.o`
+- Windows 本机编译：安装 MSVC（Visual Studio / Build Tools），用 `v -cc msvc`，由 `native/webview_bridge.cpp` 编出 `webview_bridge.obj`
 - 目标机需安装 [WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/)（Win10/11 通常已内置）
 
 ## 快速开始
@@ -95,29 +96,11 @@ const result = await window.__VTauri.invoke('greet', 'whiter');
 
 ## 架构对应
 
-| Tauri 组件 | vtauri 对应 |
-|-----------|------------|
-| `tauri` core | `vtauri/app.v` |
-| `tao` / `winit` | `vtauri/window.v` |
-| `wry` / `WebView2` | `vtauri/webview.v` + `webview_windows.v` + `native/webview_bridge.cc` |
-| IPC / command | `vtauri/ipc.v` + `command.v` |
-| `tauri.conf.json` | `vtauri/config.v` |
-| `@tauri-apps/api` | `js/vtauri.js` |
+vtauri 与 Tauri 各组件的对应关系、各模块职责说明，见 [docs/usage.md](docs/usage.md) 的「架构对应」一节。
 
 ## 路线图
 
-- [x] Phase 1：应用与配置骨架
-- [x] Phase 2：Win32 窗口系统
-- [x] Phase 3：IPC 与命令系统
-- [x] Phase 4：前端 JS API
-- [x] Phase 5：示例 + Windows 交叉编译
-- [x] Phase 6：WebView 渲染（集成 webview/webview 库，`set_html` 渲染）
-- [ ] WebView2 真机渲染验证（需 Windows 主机 + WebView2 运行时）
-- [ ] 系统托盘、原生菜单、通知
-- [ ] 跨平台（Linux / macOS）
-- [ ] 应用打包器（NSIS / MSI）
-
-详见 [plan.md](plan.md)。
+完整的 Phase 进度与后续规划，见 [docs/roadmap.md](docs/roadmap.md)。
 
 ## License
 

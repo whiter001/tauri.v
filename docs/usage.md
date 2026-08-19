@@ -291,7 +291,86 @@ const sum = await window.__VTauri.invoke('add', { a: 20, b: 22 });
 > macOS 上运行 vtauri 应用时由 WKWebView 渲染，窗口由 webview 库自建 NSWindow，本机已验证；
 > Linux 上运行 vtauri 应用时窗口系统为桩实现，核心的配置解析、IPC、命令系统逻辑可完整验证。
 
-## 7. 架构对应
+## 7. macOS 打包与签名
+
+编译出可执行文件后，用 `scripts/bundle_macos.sh` 打包成标准 macOS .app bundle
+（Finder 可双击、`open` 可启动、Dock 显示自定义图标）：
+
+```bash
+# ① 编译（Xcode CLT 自带 clang++，自动链接 Cocoa/WebKit）
+v -cc clang -o build/hello examples/hello
+
+# ② 没有设计素材时，用 gen_demo_icon.sh 生成演示图标（1024x1024 PNG）
+scripts/gen_demo_icon.sh examples/hello/icon.png
+
+# ③ 打包 .app（--icon 可选；--sign 传 Developer ID 走正式签名）
+scripts/bundle_macos.sh --exe build/hello \
+    --config examples/hello/vtauri.conf.json \
+    --out "vtauri hello.app" --icon examples/hello/icon.png
+
+# ④ 启动
+open "vtauri hello.app"
+```
+
+脚本依赖均为 Xcode Command Line Tools 自带：`python3` / `plutil` / `sips` / `iconutil` / `codesign`。
+
+### 7.1 bundle 目录结构
+
+```
+Name.app/
+  Contents/
+    Info.plist                  # 应用元数据（bundle 标识、版本、图标等）
+    MacOS/<productName>         # 可执行文件（来自 --exe）
+    Resources/
+      vtauri.conf.json          # 配置（应用内包内优先读取）
+      icon.icns                 # 可选：由 --icon 的 PNG 经 sips + iconutil 生成
+```
+
+### 7.2 Info.plist 与 vtauri.conf.json 的对应关系
+
+| Info.plist 字段 | 来源 | 说明 |
+|----------------|------|------|
+| `CFBundleExecutable` / `CFBundleName` / `CFBundleDisplayName` | `productName` | 可执行文件名与应用显示名 |
+| `CFBundleIdentifier` | `identifier` | 应用唯一标识 |
+| `CFBundleVersion` / `CFBundleShortVersionString` | `version` | 构建版本 / 短版本号 |
+| `CFBundlePackageType` | 固定 `APPL` | 应用包类型 |
+| `LSMinimumSystemVersion` | 固定 `11.0` | 最低系统版本 |
+| `NSHighResolutionCapable` | 固定 `true` | 支持 Retina 高分辨率 |
+| `CFBundleIconFile` | `--icon` 提供时 | 值为 `icon`（对应 `Resources/icon.icns`） |
+
+生成后脚本自动执行 `plutil -lint` 校验 Info.plist 合法性。
+
+### 7.3 包内配置定位（bundled_config_path）
+
+`.app` 被 Finder / `open` 启动时工作目录为 `/`，相对路径读不到工作目录下的配置文件。
+`vtauri.bundled_config_path(path)` 解决该问题：当可执行文件位于 `.app` 包内、且
+`Contents/Resources/` 下存在同名配置文件时返回包内路径（**包内优先**），否则原样返回
+传入路径（**cwd 兜底**，保持现有相对路径行为）。`examples/hello/main.v` 已改用：
+
+```v
+cfg := vtauri.load_config(vtauri.bundled_config_path('vtauri.conf.json')) or { ... }
+```
+
+### 7.4 签名两级与公证
+
+- **ad-hoc（默认）**：`--sign` 缺省为 `-`，执行 `codesign --force --sign -`，本机运行/调试足够；
+- **Developer ID**：`--sign "Developer ID Application: <Team ID> (XXXX)"` 走
+  `codesign --options runtime --timestamp`（hardened runtime）正式签名；
+- 两种路径签后都会自动执行 `codesign -v` 校验。
+
+面向外部分发还需公证（脚本不自动化，手动执行）：
+
+```bash
+xcrun notarytool submit "Name.app.zip" --apple-id <id> --team-id <team> --password <app-password> --wait
+xcrun stapler staple "Name.app"
+```
+
+### 7.5 已知限制
+
+- 应用没有菜单栏，Cmd+Q 不可用，退出只能关窗口（属后续项）；
+- dmg 制作与公证流程未自动化。
+
+## 8. 架构对应
 
 | Tauri 组件 | vtauri 对应 | 说明 |
 |-----------|------------|------|
@@ -302,7 +381,7 @@ const sum = await window.__VTauri.invoke('add', { a: 20, b: 22 });
 | `tauri.conf.json` | `vtauri/config.v` | 应用配置解析 |
 | `@tauri-apps/api` | `js/vtauri.js` | 前端 `invoke` / `listen` / `emit` |
 
-## 8. 常见问题（FAQ）
+## 9. 常见问题（FAQ）
 
 ### Q1: `v run main.v` 报 `bad module definition: v imports module "vtauri"...`
 

@@ -3,6 +3,7 @@
 //
 // Windows 本机编译（MSVC）：
 //   powershell -ExecutionPolicy Bypass -File ../../scripts/build_hello_msvc.ps1 -Run
+// macOS 打包：scripts/bundle_macos.sh --exe hello --config vtauri.conf.json --out "vtauri hello.app"
 
 module main
 
@@ -15,7 +16,7 @@ const vtauri_js = $embed_file('../../js/vtauri.js')
 
 fn main() {
 	// 1. 读取配置
-	cfg := vtauri.load_config('vtauri.conf.json') or {
+	cfg := vtauri.load_config(vtauri.bundled_config_path('vtauri.conf.json')) or {
 		eprintln('config error: ${err}')
 		vtauri.default_config()
 	}

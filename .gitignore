@@ -1,6 +1,7 @@
 # 构建产物
 examples/hello/hello
 examples/hello/hello.exe
+examples/hello/icon.png
 *.exe
 *.obj
 

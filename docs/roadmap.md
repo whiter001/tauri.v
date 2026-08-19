@@ -11,10 +11,11 @@
 - [x] **Phase 5：示例 + Windows 交叉编译** — `examples/hello` 最小可运行应用，配套交叉编译脚本
 - [x] **Phase 6：WebView 渲染** — 集成 webview/webview 库（封装 WebView2），通过 `set_html` 渲染；支持 MSVC 本机编译与窗口尺寸自适应
 - [x] **Phase 7：macOS 支持** — `vtauri/webview_darwin.v` 基于 webview/webview 的 WKWebView 后端，窗口由库自建 NSWindow；本机编译、渲染与 IPC 已验证
+- [x] **Phase 8：macOS 打包** — `scripts/bundle_macos.sh` 组 .app（Info.plist/图标/ad-hoc 或 Developer ID 签名），`scripts/gen_demo_icon.sh` 程序生成演示图标；`bundled_config_path` 支持包内配置
 
 ## 待办
 
 - [ ] **WebView2 真机渲染验证**（需 Windows 主机 + WebView2 运行时）
 - [ ] 系统托盘、原生菜单、通知
 - [ ] 跨平台（Linux）
-- [ ] 应用打包器（NSIS / MSI）
+- [ ] 应用打包器（NSIS / MSI / dmg + 公证自动化）

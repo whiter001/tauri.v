@@ -20,6 +20,7 @@
 | 示例 | `examples/react` | React 19 + Vite 前端示例（单文件构建 / dev 模式） | ✅（可编译 `.exe`） |
 | 示例 | `examples/remote` | 远程 URL 加载示例（`load_url` 嵌套 vlang.io） | ✅（可编译 `.exe`） |
 | C++ 桥 | `native/webview_bridge.cpp`（`#include` 实现于 `.cc`） | 把 webview 库暴露为稳定 C 接口（MSVC 编译为 `.obj`） | ✅ |
+| macOS 打包 | `scripts/bundle_macos.sh` | .app 组包 + Info.plist + 图标 + ad-hoc/Developer ID 签名 | ✅ |
 
 ## 环境
 
@@ -100,6 +101,35 @@ cd examples/hello && ../../hello           # 或直接 -o 到该目录后运行
 
 > 也可用 `v run examples/hello`。注意 `examples/hello` 的 `main.v` 用相对路径读
 > `vtauri.conf.json`，需在 `examples/hello` 目录下运行（找不到配置时回退 `default_config`）。
+
+### 4. macOS 打包 .app
+
+把编译好的可执行文件打成标准 macOS .app bundle（Finder 可双击、`open` 可启动、Dock 显示自定义图标）：
+
+```bash
+# ① 编译（Xcode CLT 自带 clang++，自动链接 Cocoa/WebKit）
+v -cc clang -o build/hello examples/hello
+
+# ② 没有设计素材时，用脚本生成演示图标（1024x1024 PNG）
+scripts/gen_demo_icon.sh examples/hello/icon.png
+
+# ③ 打包 .app（--icon 可选；--sign 传 Developer ID 走正式签名）
+scripts/bundle_macos.sh --exe build/hello \
+    --config examples/hello/vtauri.conf.json \
+    --out "vtauri hello.app" --icon examples/hello/icon.png
+
+# ④ 启动
+open "vtauri hello.app"
+```
+
+产物结构：`Name.app/Contents/{Info.plist, MacOS/<productName>, Resources/vtauri.conf.json, Resources/icon.icns(可选)}`。
+Info.plist 字段来自配置（`CFBundleExecutable`/`CFBundleName`/`CFBundleDisplayName`=`productName`、
+`CFBundleIdentifier`=`identifier`、`CFBundleVersion`/`CFBundleShortVersionString`=`version`），
+生成后自动 `plutil -lint` 校验；`--icon` 的 PNG 经 sips + iconutil 生成 `.icns`。
+
+签名：默认 ad-hoc（`codesign --force --sign -`，本机运行足够）；`--sign "Developer ID Application: ..."`
+走 `--options runtime --timestamp` 的正式签名，签后自动 `codesign -v`。
+面向外部分发需公证（notarization），手动步骤见 [docs/usage.md](docs/usage.md) 的「macOS 打包与签名」一节。
 
 ## 使用方案
 

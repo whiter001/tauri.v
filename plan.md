@@ -109,9 +109,10 @@ tests/
 - [x] WebView 渲染：`index.html` 经 `$embed_file` 嵌入，`set_html` 渲染（方案 A，集成 webview 库）
 - [ ] WebView2 真机渲染验证（需 Windows 主机 + WebView2 运行时）
 - [x] macOS 支持：webview_darwin.v（WKWebView 后端，库自建 NSWindow），本机编译 + 渲染 + IPC 已验证
+- [x] macOS 打包：bundle_macos.sh 组 .app（含图标与签名），open 启动 + Dock 图标已验证
 
 ## 6. 后续路线（超出本次范围）
 - 系统托盘、原生菜单、通知
 - 跨平台（Linux / 移动端）后端
-- 应用打包器（`.msi` / NSIS `.exe` 安装包）
+- 应用打包器（`.msi` / NSIS `.exe` / dmg + 公证自动化）
 - 前端资源打包与自更新

@@ -56,8 +56,8 @@ pub fn load_config(path string) !AppConfig {
 	mut wt := ''
 	mut ww := f64(0)
 	mut wh := f64(0)
-	mut wc := true  // 默认居中，与 default_config 一致
-	mut wr := true  // 默认可调整大小，与 default_config 一致
+	mut wc := true // 默认居中，与 default_config 一致
+	mut wr := true // 默认可调整大小，与 default_config 一致
 	if raw.app.windows.len > 0 {
 		w := raw.app.windows[0]
 		wt = w.title
@@ -96,4 +96,15 @@ pub fn default_config() AppConfig {
 			resizable: true
 		}
 	}
+}
+
+// bundled_config_path 若可执行文件位于 .app 包内且 Resources 下存在同名配置文件，
+// 返回包内路径；否则原样返回传入路径（保持现有 cwd 相对路径行为）。
+pub fn bundled_config_path(path string) string {
+	exe := os.executable()
+	res := os.join_path(os.dir(exe), '..', 'Resources', os.file_name(path))
+	if os.exists(res) {
+		return res
+	}
+	return path
 }

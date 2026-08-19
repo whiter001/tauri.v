@@ -44,8 +44,7 @@ fn test_load_config_defaults_match() {
 	// 窗口缺失时，load_config 的默认值应与 default_config 保持一致
 	dir := os.temp_dir()
 	cfg_path := os.join_path(dir, 'vtauri_test_defaults.conf.json')
-	os.write_file(cfg_path,
-		'{"productName":"d","identifier":"com.d","version":"0.0.1","app":{}}') or {
+	os.write_file(cfg_path, '{"productName":"d","identifier":"com.d","version":"0.0.1","app":{}}') or {
 		panic(err)
 	}
 
@@ -55,4 +54,9 @@ fn test_load_config_defaults_match() {
 	assert cfg.main_window.resizable == default.main_window.resizable
 
 	os.rm(cfg_path) or {}
+}
+
+fn test_bundled_config_path_fallback() {
+	// 非 .app 环境下应原样返回传入路径
+	assert bundled_config_path('vtauri.conf.json') == 'vtauri.conf.json'
 }

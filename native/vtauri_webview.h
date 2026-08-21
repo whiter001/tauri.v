@@ -90,6 +90,24 @@ void vtauri_mac_tray_add_item(void *tray, const char *id, const char *label);
 /* 注册托盘菜单项点击回调。 */
 void vtauri_mac_tray_on_click(void *tray, vtauri_mac_tray_cb cb, void *userdata);
 
+/* 写入纯文本到系统剪贴板（NSPasteboard generalPasteboard）。仅 macOS。 */
+void vtauri_mac_clipboard_write_text(const char *text);
+
+/* 读取系统剪贴板纯文本（"public.utf8-plain-text" 类型）。
+ * 返回 malloc 分配的字符串（调用方负责 free）；无文本返回 NULL。仅 macOS。 */
+char *vtauri_mac_clipboard_read_text();
+
+/* 用系统默认应用打开 URL（http/https/file 等，NSWorkspace openURL:）。
+ * 返回 1 成功，0 失败。仅 macOS。 */
+int vtauri_mac_open_url(const char *url);
+
+/* 发送系统通知（UNUserNotificationCenter）。返回码：
+ *   0 = 已提交（首次调用会先弹系统授权框，授权通过后异步投递）；
+ *   1 = 未打包 .app（UNUserNotificationCenter 要求 bundle，裸二进制会崩溃，必须拦截）；
+ *   2 = 用户拒绝授权（先前调用中被拒，此调用直接返回）。
+ * 仅 macOS。 */
+int vtauri_mac_notify(const char *title, const char *body);
+
 #ifdef __cplusplus
 }
 #endif

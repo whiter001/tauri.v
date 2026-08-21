@@ -57,6 +57,34 @@ fn main() {
 		return path
 	}))
 
+	// 4c. 注册命令：notify_demo / clip_write / clip_read / open_url 系统能力。
+	// 命令 handler 返回的是 JSON 字符串（vtauri.encode），前端 JSON.parse 后直接显示。
+	// 错误按提示字符串返回（而非 IPC 错误），前端无需特殊处理即可展示 err 文本。
+	app.register_command('notify_demo', fn (args string) !string {
+		vtauri.notify('vtauri hello', '来自 V 后端的通知') or {
+			return vtauri.encode('通知失败：${err}')
+		}
+		return vtauri.encode('已发送通知')
+	})
+
+	app.register_command('clip_write', fn (args string) !string {
+		vtauri.clipboard_write_text('Hello from vtauri!')
+		return vtauri.encode('已写入剪贴板')
+	})
+
+	app.register_command('clip_read', fn (args string) !string {
+		text := vtauri.clipboard_read_text()
+		if text == '' {
+			return vtauri.encode('（剪贴板无文本）')
+		}
+		return vtauri.encode(text)
+	})
+
+	app.register_command('open_url', fn (args string) !string {
+		vtauri.shell_open('https://vlang.io') or { return vtauri.encode('打开失败：${err}') }
+		return vtauri.encode('已打开')
+	})
+
 	// 5. 构建窗口 + WebView
 	app.build() or {
 		eprintln('build failed: ${err}')

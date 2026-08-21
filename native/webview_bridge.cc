@@ -19,6 +19,11 @@
 #include <string>
 
 #if defined(WEBVIEW_PLATFORM_DARWIN)
+// Block.h 提供 Block_copy/Block_release（blocks runtime，macOS 上随 libSystem）。
+// 授权 completionHandler 与通知中心回调都要求真正的 Objective-C block（`^{...}`），
+// 不能用 C 函数指针替代，故本文件使用 clang 的 -fblocks 扩展（见 notify_darwin.v
+// 的 `#flag darwin -fblocks`，模块级合并后同样作用于本 .o 的编译）。
+#include <Block.h>
 #include <objc/runtime.h>
 #endif
 
@@ -62,6 +67,31 @@ static void vtauri_tray_action_imp(id self, SEL _cmd, id sender) {
     const char *idstr = cocoa::NSString_get_UTF8String(repr);
     ctx->cb(idstr ? idstr : "", ctx->userdata);
   }
+}
+#endif
+
+// --- 系统通知（macOS UNUserNotificationCenter）支持 ---
+// 通知文本暂存在进程级 static std::string：requestAuthorization 的 completionHandler
+// 是异步回调（用户点完授权框才执行），届时 notify 调用早已返回，只能用全局暂存
+// 而非捕获调用栈局部量。非可重入：需要串行调用（通知本身是低频操作，可接受）。
+// vtauri_notify_authorized：0=未知/已提交；2=用户拒绝授权（由异步 block 写入，
+// 后续 notify 调用直接返回 2，使 V 侧能同步映射出“权限被拒”错误）。
+static std::string vtauri_notify_title;
+static std::string vtauri_notify_body;
+static int vtauri_notify_authorized = 0;
+
+#if defined(WEBVIEW_PLATFORM_DARWIN)
+// 动态类 VtauriNotifyDelegate 的 willPresentNotification IMP：让应用在前台时
+// 通知也能以横幅 + 声音形式呈现（不设 delegate 时前台只进通知中心，不弹横幅）。
+// completionHandler 是 block：void (^)(UNNotificationPresentationOptions)，
+// UNNotificationPresentationOptions 为 NSUInteger（64 位 unsigned long）。
+// 参数是 id，直接 cast 成 block 指针类型调用（clang -fblocks 支持；非 ARC C++
+// 下不能用 __bridge，用 C 风格 cast 即可）。Banner(1<<4=16) | Sound(1<<0=1) = 17。
+static void vtauri_notify_present_imp(id self, SEL _cmd, id center,
+                                      id notification, id handler_id) {
+  objc::autoreleasepool arp;
+  void (^completion)(unsigned long) = (void (^)(unsigned long))handler_id;
+  completion(17);
 }
 #endif
 
@@ -413,6 +443,179 @@ void vtauri_mac_tray_on_click(void *tray, vtauri_mac_tray_cb cb, void *userdata)
   auto *handle = static_cast<VtauriTrayHandle *>(tray);
   handle->cbctx.cb = cb;
   handle->cbctx.userdata = userdata;
+#endif
+}
+
+void vtauri_mac_clipboard_write_text(const char *text) {
+#if defined(WEBVIEW_PLATFORM_DARWIN)
+  namespace objc = webview::detail::objc;
+  namespace cocoa = webview::detail::cocoa;
+
+  objc::autoreleasepool arp;
+
+  // [[NSPasteboard generalPasteboard] clearContents] + setString:forType:
+  // NSPasteboardTypeString 是 extern NSString 常量，避免引入符号依赖，
+  // 直接用等价字面量 "public.utf8-plain-text"（经 NSString_stringWithUTF8String）。
+  id pasteboard = objc::msg_send<id>(objc::get_class("NSPasteboard"),
+                                     objc::selector("generalPasteboard"));
+  objc::msg_send<void>(pasteboard, objc::selector("clearContents"));
+  objc::msg_send<BOOL>(pasteboard, objc::selector("setString:forType:"),
+                       cocoa::NSString_stringWithUTF8String(text ? text : ""),
+                       cocoa::NSString_stringWithUTF8String("public.utf8-plain-text"));
+#endif
+}
+
+char *vtauri_mac_clipboard_read_text() {
+#if defined(WEBVIEW_PLATFORM_DARWIN)
+  namespace objc = webview::detail::objc;
+  namespace cocoa = webview::detail::cocoa;
+
+  objc::autoreleasepool arp;
+
+  id pasteboard = objc::msg_send<id>(objc::get_class("NSPasteboard"),
+                                     objc::selector("generalPasteboard"));
+  id str = objc::msg_send<id>(pasteboard, objc::selector("stringForType:"),
+                              cocoa::NSString_stringWithUTF8String("public.utf8-plain-text"));
+  if (str == nullptr) {
+    return nullptr;
+  }
+  const char *utf8 = cocoa::NSString_get_UTF8String(str);
+  if (utf8 == nullptr) {
+    return nullptr;
+  }
+  return strdup(utf8); // malloc 分配，调用方负责 free
+#else
+  return nullptr;
+#endif
+}
+
+int vtauri_mac_open_url(const char *url) {
+#if defined(WEBVIEW_PLATFORM_DARWIN)
+  namespace objc = webview::detail::objc;
+  namespace cocoa = webview::detail::cocoa;
+
+  objc::autoreleasepool arp;
+
+  // [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:...]]；
+  // openURL: 返回 BOOL。URL 非法时 URLWithString: 返回 nil，openURL: 也返回 NO。
+  id nsurl = objc::msg_send<id>(objc::get_class("NSURL"),
+                                objc::selector("URLWithString:"),
+                                cocoa::NSString_stringWithUTF8String(url ? url : ""));
+  if (nsurl == nullptr) {
+    return 0;
+  }
+  id workspace = objc::msg_send<id>(objc::get_class("NSWorkspace"),
+                                    objc::selector("sharedWorkspace"));
+  BOOL ok = objc::msg_send<BOOL>(workspace, objc::selector("openURL:"), nsurl);
+  return ok ? 1 : 0;
+#else
+  return 0;
+#endif
+}
+
+int vtauri_mac_notify(const char *title, const char *body) {
+#if defined(WEBVIEW_PLATFORM_DARWIN)
+  namespace objc = webview::detail::objc;
+  namespace cocoa = webview::detail::cocoa;
+
+  // 1) UNUserNotificationCenter 要求进程处于 .app bundle（有 CFBundleIdentifier）；
+  //    裸二进制（直接运行 hello 而未经 scripts/bundle_macos.sh 打包）在此调用会
+  //    抛异常崩溃，必须先拦截。bundleIdentifier 为 nil 即视为未打包。
+  id bundle = cocoa::NSBundle_get_mainBundle();
+  if (bundle == nullptr) {
+    return 1;
+  }
+  id bundle_id = objc::msg_send<id>(bundle, objc::selector("bundleIdentifier"));
+  if (bundle_id == nullptr) {
+    return 1;
+  }
+
+  objc::autoreleasepool arp;
+
+  id center = objc::msg_send<id>(objc::get_class("UNUserNotificationCenter"),
+                                 objc::selector("currentNotificationCenter"));
+  if (center == nullptr) {
+    return 0;
+  }
+
+  // 2) delegate：让应用在前台时也能弹出横幅。UNUserNotificationCenter 的 delegate
+  //    是弱引用，单例实例必须进程生命周期存活——new 一次存 static，不释放
+  //    （与托盘 target 同策略）。
+  static bool delegate_class_ready = false;
+  if (!delegate_class_ready) {
+    Class cls =
+        objc_allocateClassPair(objc::get_class("NSObject"), "VtauriNotifyDelegate", 0);
+    class_addMethod(cls,
+                    objc::selector("userNotificationCenter:willPresentNotification:"
+                                   "withCompletionHandler:"),
+                    reinterpret_cast<IMP>(vtauri_notify_present_imp), "v@:@@@");
+    objc_registerClassPair(cls);
+    delegate_class_ready = true;
+  }
+  static id notify_delegate = nullptr;
+  if (notify_delegate == nullptr) {
+    notify_delegate = objc::msg_send<id>(objc::get_class("VtauriNotifyDelegate"),
+                                         objc::selector("new"));
+  }
+  objc::msg_send<void>(center, objc::selector("setDelegate:"), notify_delegate);
+
+  // 3) 授权 + 发送。首次调用触发系统授权弹窗；授权 completionHandler 是异步回调，
+  //    回调里「授权成功则立即构造并提交通知」这一完整链路，外层同步返回 0（已提交）。
+  //    用户先前拒绝过授权时，直接返回 2（V 侧映射为「权限被拒」错误）。
+  if (vtauri_notify_authorized == 2) {
+    return 2;
+  }
+
+  vtauri_notify_title = title != nullptr ? title : "";
+  vtauri_notify_body = body != nullptr ? body : "";
+
+  // UNAuthorizationOptions：alert(1<<2=4) | sound(1<<0=1) = 5，NSUInteger 传 64 位值。
+  // completionHandler 用 C++ block 字面量（-fblocks），Block_copy 后作为 id 传入 msg_send。
+  // 框架会自行再拷贝一份用于异步调用；我们持有的一份进程生命周期内不再释放
+  // （通知是低频操作，与托盘结构体同策略）。
+  void (^auth_block)(BOOL, id) = ^(BOOL granted, id error) {
+    // completionHandler 可能在任何队列执行，block 内自建 autoreleasepool。
+    objc::autoreleasepool arp;
+    if (!granted) {
+      vtauri_notify_authorized = 2; // 用户拒绝授权：置结果码，供后续调用直接返回
+      return;
+    }
+    // UNMutableNotificationContent + setTitle:/setBody:
+    id content = objc::msg_send<id>(
+        objc::msg_send<id>(objc::get_class("UNMutableNotificationContent"),
+                           objc::selector("alloc")),
+        objc::selector("init"));
+    objc::msg_send<void>(content, objc::selector("setTitle:"),
+                         cocoa::NSString_stringWithUTF8String(vtauri_notify_title));
+    objc::msg_send<void>(content, objc::selector("setBody:"),
+                         cocoa::NSString_stringWithUTF8String(vtauri_notify_body));
+    // 0.1 秒后触发（立即呈现），repeats:NO。
+    // 注意：必须用类工厂 triggerWithTimeInterval:repeats:；当前 macOS 上
+    // alloc + initWithTimeInterval:repeats: 会抛 unrecognized selector
+    // （实例 init 已改名 _initWithTimeInterval:repeats:，不再公开）。
+    // 工厂方法返回 autoreleased 对象，request 构造时会 retain。
+    id trigger = objc::msg_send<id>(
+        objc::get_class("UNTimeIntervalNotificationTrigger"),
+        objc::selector("triggerWithTimeInterval:repeats:"), 0.1,
+        static_cast<BOOL>(false));
+    // identifier 自增计数，保证每次通知唯一
+    static unsigned long serial = 0;
+    std::string ident = "vtauri-notify-" + std::to_string(++serial);
+    id request = objc::msg_send<id>(
+        objc::get_class("UNNotificationRequest"),
+        objc::selector("requestWithIdentifier:content:trigger:"),
+        cocoa::NSString_stringWithUTF8String(ident), content, trigger);
+    objc::msg_send<void>(center,
+                         objc::selector("addNotificationRequest:withCompletionHandler:"),
+                         request, static_cast<id>(nullptr));
+  };
+  id auth_block_copy = (id)Block_copy(auth_block);
+  objc::msg_send<void>(center,
+                       objc::selector("requestAuthorizationWithOptions:completionHandler:"),
+                       static_cast<NSUInteger>(5), auth_block_copy);
+  return 0;
+#else
+  return 0;
 #endif
 }
 

@@ -25,6 +25,11 @@
     <button id="dialogMsgBtn">弹出消息框</button>
     <button id="dialogOpenBtn">打开文件</button>
     <button id="dialogSaveBtn">保存文件</button>
+    <br />
+    <button id="notifyBtn">发送通知</button>
+    <button id="clipWriteBtn">写入剪贴板</button>
+    <button id="clipReadBtn">读取剪贴板</button>
+    <button id="openUrlBtn">打开链接</button>
     <output id="out">--</output>
   </div>
 
@@ -67,6 +72,46 @@
       out.textContent = '调用中...';
       try {
         var result = await window.__VTauri.invoke('dialog_save', '');
+        out.textContent = result;
+      } catch (e) {
+        out.textContent = '错误: ' + e.message;
+      }
+    });
+    document.getElementById('notifyBtn').addEventListener('click', async function () {
+      var out = document.getElementById('out');
+      out.textContent = '调用中...';
+      try {
+        var result = await window.__VTauri.invoke('notify_demo', '');
+        out.textContent = result;
+      } catch (e) {
+        out.textContent = '错误: ' + e.message;
+      }
+    });
+    document.getElementById('clipWriteBtn').addEventListener('click', async function () {
+      var out = document.getElementById('out');
+      out.textContent = '调用中...';
+      try {
+        var result = await window.__VTauri.invoke('clip_write', '');
+        out.textContent = result;
+      } catch (e) {
+        out.textContent = '错误: ' + e.message;
+      }
+    });
+    document.getElementById('clipReadBtn').addEventListener('click', async function () {
+      var out = document.getElementById('out');
+      out.textContent = '调用中...';
+      try {
+        var result = await window.__VTauri.invoke('clip_read', '');
+        out.textContent = result;
+      } catch (e) {
+        out.textContent = '错误: ' + e.message;
+      }
+    });
+    document.getElementById('openUrlBtn').addEventListener('click', async function () {
+      var out = document.getElementById('out');
+      out.textContent = '调用中...';
+      try {
+        var result = await window.__VTauri.invoke('open_url', '');
         out.textContent = result;
       } catch (e) {
         out.textContent = '错误: ' + e.message;

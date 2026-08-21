@@ -468,7 +468,77 @@ tray.on_menu_click(fn [mut app] (id string) {
 真机验证结果：System Events 确认 menu bar 2 出现「VT」托盘项；点开菜单显示「关于 vtauri / 退出」；
 点击「退出」进程正常退出（动态类回调 → V 闭包 → app.quit() 全链路）。
 
-## 10. 架构对应
+## 10. 系统通知 / 剪贴板 / shell open
+
+对应 Tauri 的 `tauri-plugin-notification` / `tauri-plugin-clipboard-manager` / `tauri-plugin-shell`，
+vtauri 提供三个原生能力：系统通知、剪贴板文本读写、用系统默认应用打开 URL
+（仅 macOS 实现，其他平台为桩：打印调用信息并返回空串 / 直接返回），实现在
+`vtauri/notify.v` / `vtauri/clipboard.v` / `vtauri/shell.v`（macOS 实现见对应的
+`notify_darwin.v` / `clipboard_darwin.v` / `shell_darwin.v`），由桥接层
+`native/webview_bridge.cc` 驱动 AppKit（UNUserNotificationCenter / NSPasteboard / NSWorkspace）：
+
+```v
+import vtauri
+
+// 系统通知：横幅提示；未打包 .app 或用户拒绝授权时返回错误
+vtauri.notify('vtauri hello', '来自 V 后端的通知')!
+
+// 剪贴板：写入 / 读取纯文本（剪贴板无文本时读取返回空串）
+vtauri.clipboard_write_text('Hello from vtauri!')
+text := vtauri.clipboard_read_text()
+
+// shell open：用系统默认应用打开 URL（http/https/file 等），失败返回错误
+vtauri.shell_open('https://vlang.io')!
+```
+
+API 一览：
+
+| API | 说明 |
+|-----|------|
+| `notify(title, body) !` | 发送一条系统通知横幅；macOS 未打包 .app 或用户拒绝授权时返回错误 |
+| `clipboard_write_text(text)` | 把纯文本写入系统剪贴板 |
+| `clipboard_read_text() string` | 读取系统剪贴板纯文本，无文本时返回空串 |
+| `shell_open(url) !` | 用系统默认应用打开 URL（http/https/file 等），失败返回错误 |
+
+`examples/hello` 演示了完整用法：后端注册 `notify_demo` / `clip_write` / `clip_read` / `open_url`
+四个命令，前端按钮 `invoke` 后把结果显示到页面：
+
+```v
+// 后端注册（examples/hello/main.v）
+app.register_command('notify_demo', fn (args string) !string {
+	vtauri.notify('vtauri hello', '来自 V 后端的通知') or {
+		return vtauri.encode('通知失败：${err}')
+	}
+	return vtauri.encode('已发送通知')
+})
+
+app.register_command('open_url', fn (args string) !string {
+	vtauri.shell_open('https://vlang.io') or { return vtauri.encode('打开失败：${err}') }
+	return vtauri.encode('已打开')
+})
+```
+
+```js
+// 前端调用（examples/hello/index.html）
+var result = await window.__VTauri.invoke('clip_read', '');
+```
+
+### 10.1 notify 的已知限制
+
+- **必须运行在 .app bundle 内**：`notify` 依赖 UNUserNotificationCenter，要求进程有
+  `CFBundleIdentifier`。裸二进制直接调用会返回错误
+  「notify requires .app bundle (see scripts/bundle_macos.sh)」，
+  请先用 `scripts/bundle_macos.sh` 打包成 .app 后再运行（见第 7 节）。
+- **首次调用弹系统授权框**：应用第一次调用 `notify` 时系统会弹出通知授权对话框，
+  用户拒绝后再次调用返回权限被拒错误（"notification permission denied"）。
+- **ad-hoc 签名 + 非常规位置**：ad-hoc 签名的包如果放在 `/tmp` 等非常规位置，
+  `usernoted` 可能报 "Failed to find or validate client"，通知无法送达。
+  解决：用 `lsregister -f <app路径>` 注册该 app，或把 app 放到 `~/Applications`
+  等正常位置后再用 `open` 启动。
+
+真机验证结果：通知横幅弹出；剪贴板写入后读取返回相同文本；`open_url` 用默认浏览器打开 vlang.io。
+
+## 11. 架构对应
 
 | Tauri 组件 | vtauri 对应 | 说明 |
 |-----------|------------|------|
@@ -479,7 +549,7 @@ tray.on_menu_click(fn [mut app] (id string) {
 | `tauri.conf.json` | `vtauri/config.v` | 应用配置解析 |
 | `@tauri-apps/api` | `js/vtauri.js` | 前端 `invoke` / `listen` / `emit` |
 
-## 11. 常见问题（FAQ）
+## 12. 常见问题（FAQ）
 
 ### Q1: `v run main.v` 报 `bad module definition: v imports module "vtauri"...`
 

@@ -15,10 +15,11 @@
 - [x] **Phase 9：macOS 菜单栏与窗口控制** — 自动安装标准菜单栏（Cmd+Q、Edit 复制粘贴快捷键）、App.quit()、resizable 配置生效
 - [x] **Phase 10：macOS 原生对话框** — vtauri/dialog.v：消息框 / 打开文件 / 保存文件（NSAlert/NSOpenPanel/NSSavePanel），前后端 IPC 全链路真机验证
 - [x] **Phase 11：macOS 系统托盘** — vtauri/tray.v：NSStatusItem 托盘图标 + 菜单项回调（动态类 IMP），点击退出链路真机验证
+- [x] **Phase 12：macOS 通知 / 剪贴板 / shell open** — vtauri/notify.v（UNUserNotificationCenter 通知横幅）、vtauri/clipboard.v（NSPasteboard 剪贴板读写）、vtauri/shell.v（NSWorkspace 打开 URL），IPC 全链路真机验证
 
 ## 待办
 
 - [ ] **WebView2 真机渲染验证**（需 Windows 主机 + WebView2 运行时）
-- [ ] 原生菜单自定义、通知、托盘图片图标
+- [ ] 原生菜单自定义、托盘图片图标
 - [ ] 跨平台（Linux）
 - [ ] 应用打包器（NSIS / MSI / dmg + 公证自动化）

@@ -340,6 +340,24 @@ char *vtauri_mac_save_file(const char *title, const char *default_name) {
 #endif
 }
 
+// 动态类 VtauriTrayTarget 进程内只建一次（static 标志位守卫；
+// 重复 objc_registerClassPair 同名类会崩溃）。tray_create 与 menubar_create
+// 都会用到，抽为独立函数，避免两处各自守卫导致重复注册。
+static void vtauri_ensure_tray_target_class() {
+  static bool class_ready = false;
+  if (class_ready) {
+    return;
+  }
+  Class cls =
+      objc_allocateClassPair(objc::get_class("NSObject"), "VtauriTrayTarget", 0);
+  // ivar 存 VtauriTrayCtx*；alignment 传 log2(sizeof(void*))。
+  class_addIvar(cls, "vtauri_ctx", sizeof(void *), 3 /* log2(8) */, "^v");
+  class_addMethod(cls, objc::selector("vtauriTrayAction:"),
+                  reinterpret_cast<IMP>(vtauri_tray_action_imp), "v@:@");
+  objc_registerClassPair(cls);
+  class_ready = true;
+}
+
 void *vtauri_mac_tray_create(const char *title) {
 #if defined(WEBVIEW_PLATFORM_DARWIN)
   namespace objc = webview::detail::objc;
@@ -352,19 +370,7 @@ void *vtauri_mac_tray_create(const char *title) {
       cocoa::NSApplication_get_sharedApplication(),
       cocoa::NSApplicationActivationPolicyRegular);
 
-  // 动态类 VtauriTrayTarget 进程内只建一次（static 标志位守卫；
-  // 重复 objc_registerClassPair 同名类会崩溃）。
-  static bool class_ready = false;
-  if (!class_ready) {
-    Class cls =
-        objc_allocateClassPair(objc::get_class("NSObject"), "VtauriTrayTarget", 0);
-    // ivar 存 VtauriTrayCtx*；alignment 传 log2(sizeof(void*))。
-    class_addIvar(cls, "vtauri_ctx", sizeof(void *), 3 /* log2(8) */, "^v");
-    class_addMethod(cls, objc::selector("vtauriTrayAction:"),
-                    reinterpret_cast<IMP>(vtauri_tray_action_imp), "v@:@");
-    objc_registerClassPair(cls);
-    class_ready = true;
-  }
+  vtauri_ensure_tray_target_class();
   id target =
       objc::msg_send<id>(objc::get_class("VtauriTrayTarget"), objc::selector("new"));
 
@@ -443,6 +449,239 @@ void vtauri_mac_tray_on_click(void *tray, vtauri_mac_tray_cb cb, void *userdata)
   auto *handle = static_cast<VtauriTrayHandle *>(tray);
   handle->cbctx.cb = cb;
   handle->cbctx.userdata = userdata;
+#endif
+}
+
+int vtauri_mac_tray_set_icon(void *tray, const char *path) {
+#if defined(WEBVIEW_PLATFORM_DARWIN)
+  if (tray == nullptr) {
+    return 1;
+  }
+  namespace objc = webview::detail::objc;
+  namespace cocoa = webview::detail::cocoa;
+
+  objc::autoreleasepool arp;
+
+  auto *handle = static_cast<VtauriTrayHandle *>(tray);
+  id status_item = static_cast<id>(handle->item);
+  if (status_item == nullptr) {
+    return 1;
+  }
+
+  // [[NSImage alloc] initWithContentsOfFile:]，路径不存在/文件损坏返回 nil → 失败。
+  id image = objc::msg_send<id>(
+      objc::msg_send<id>(objc::get_class("NSImage"), objc::selector("alloc")),
+      objc::selector("initWithContentsOfFile:"),
+      cocoa::NSString_stringWithUTF8String(path ? path : ""));
+  if (image == nullptr) {
+    return 1;
+  }
+  // 菜单栏图标标准尺寸 18x18 点阵；setTemplate:YES 让系统按模板图渲染
+  //（用 alpha 通道作遮罩、自动适配菜单栏明暗），此时图片本身颜色被忽略。
+  objc::msg_send<void>(image, objc::selector("setSize:"),
+                       cocoa::NSSizeMake(18.0, 18.0));
+  objc::msg_send<void>(image, objc::selector("setTemplate:"),
+                       static_cast<BOOL>(true));
+  id button = objc::msg_send<id>(status_item, objc::selector("button"));
+  objc::msg_send<void>(button, objc::selector("setImage:"), image);
+  // 清空按钮文本，避免图文重叠（替换为纯图标）。
+  objc::msg_send<void>(button, objc::selector("setTitle:"),
+                       cocoa::NSString_stringWithUTF8String(""));
+  // image 有意不释放：菜单栏按钮持有它，且 set_icon 是进程生命周期低频操作，
+  // 与托盘句柄等进程内不释放对象同一策略。
+  return 0;
+#else
+  return 1;
+#endif
+}
+
+void *vtauri_mac_menubar_create(void) {
+#if defined(WEBVIEW_PLATFORM_DARWIN)
+  namespace objc = webview::detail::objc;
+  namespace cocoa = webview::detail::cocoa;
+
+  objc::autoreleasepool arp;
+
+  // 防御性确保 NSApp 存在（与托盘同款保险）。
+  cocoa::NSApplication_setActivationPolicy(
+      cocoa::NSApplication_get_sharedApplication(),
+      cocoa::NSApplicationActivationPolicyRegular);
+
+  // 动态类/action IMP 与托盘完全复用（只依赖 ivar vtauri_ctx 与 representedObject，
+  // 与 NSStatusItem 无耦合）；但 class_ready 守卫已抽到 vtauri_ensure_tray_target_class，
+  // 若托盘已创建过，这里不会重复注册同名类。
+  vtauri_ensure_tray_target_class();
+  id target =
+      objc::msg_send<id>(objc::get_class("VtauriTrayTarget"), objc::selector("new"));
+
+  // 主菜单 NSMenu：new 即 [[NSMenu alloc] init]。
+  id menubar = objc::msg_send<id>(objc::get_class("NSMenu"), objc::selector("new"));
+
+  // 复用托盘句柄结构体：item 字段不用（置空），menu 存 menubar，
+  // target 存复用的 VtauriTrayTarget 实例，cbctx 由 on_click 写入。
+  // 整条对象图（menubar → 各 submenu/item → target）由 NSApp 强持有，
+  // 句柄本身 new 分配、进程生命周期不释放。
+  auto *handle = new VtauriTrayHandle;
+  handle->item = nullptr;
+  handle->menu = menubar;
+  handle->target = target;
+  Ivar iv = class_getInstanceVariable(object_getClass(target), "vtauri_ctx");
+  if (iv) {
+    void **slot = reinterpret_cast<void **>(reinterpret_cast<char *>(target) +
+                                            ivar_getOffset(iv));
+    *slot = &handle->cbctx;
+  }
+  return handle;
+#else
+  return nullptr;
+#endif
+}
+
+void *vtauri_mac_menubar_add_menu(void *mb, const char *title) {
+#if defined(WEBVIEW_PLATFORM_DARWIN)
+  if (mb == nullptr) {
+    return nullptr;
+  }
+  namespace objc = webview::detail::objc;
+  namespace cocoa = webview::detail::cocoa;
+
+  objc::autoreleasepool arp;
+
+  auto *handle = static_cast<VtauriTrayHandle *>(mb);
+  id menubar = static_cast<id>(handle->menu);
+
+  // 顶级菜单 = 无标题 NSMenuItem + 带标题 submenu（与 install_app_menu 同款装配；
+  // 菜单栏显示的是 submenu 的标题）。
+  id item = objc::msg_send<id>(objc::get_class("NSMenuItem"), objc::selector("new"));
+  objc::msg_send<void>(menubar, objc::selector("addItem:"), item);
+  id menu = objc::msg_send<id>(
+      objc::msg_send<id>(objc::get_class("NSMenu"), objc::selector("alloc")),
+      objc::selector("initWithTitle:"),
+      cocoa::NSString_stringWithUTF8String(title ? title : ""));
+  objc::msg_send<void>(item, objc::selector("setSubmenu:"), menu);
+  // submenu 被菜单项持有，返回指针由调用方传入 menu_add_item / add_separator。
+  return menu;
+#else
+  return nullptr;
+#endif
+}
+
+void vtauri_mac_menu_add_item(void *mb, void *menu, const char *item_id,
+                              const char *action, const char *label,
+                              const char *key, int mods) {
+#if defined(WEBVIEW_PLATFORM_DARWIN)
+  if (mb == nullptr || menu == nullptr) {
+    return;
+  }
+  namespace objc = webview::detail::objc;
+  namespace cocoa = webview::detail::cocoa;
+
+  objc::autoreleasepool arp;
+
+  auto *handle = static_cast<VtauriTrayHandle *>(mb);
+  id target = static_cast<id>(handle->target);
+  id m = static_cast<id>(menu);
+
+  std::string key_str = key != nullptr ? key : "";
+  bool has_action = action != nullptr && action[0] != '\0';
+  bool has_id = item_id != nullptr && item_id[0] != '\0';
+
+  id item = nullptr;
+  if (has_action) {
+    // 系统项：target=nil，走 responder chain（如 copy:/paste:/orderFrontStandardAboutPanel:），
+    // 不设 representedObject（点击不经 V 回调）。
+    item = objc::msg_send<id>(
+        objc::msg_send<id>(objc::get_class("NSMenuItem"), objc::selector("alloc")),
+        objc::selector("initWithTitle:action:keyEquivalent:"),
+        cocoa::NSString_stringWithUTF8String(label ? label : ""),
+        objc::selector(action), cocoa::NSString_stringWithUTF8String(key_str));
+  } else {
+    // 自定义项：target=句柄里的 VtauriTrayTarget，representedObject 存 id，
+    // 点击时 vtauri_tray_action_imp 读回 id 触发 V 回调。
+    item = objc::msg_send<id>(
+        objc::msg_send<id>(objc::get_class("NSMenuItem"), objc::selector("alloc")),
+        objc::selector("initWithTitle:action:keyEquivalent:"),
+        cocoa::NSString_stringWithUTF8String(label ? label : ""),
+        objc::selector("vtauriTrayAction:"),
+        cocoa::NSString_stringWithUTF8String(key_str));
+    objc::msg_send<void>(item, objc::selector("setTarget:"), target);
+    if (has_id) {
+      objc::msg_send<void>(item, objc::selector("setRepresentedObject:"),
+                           cocoa::NSString_stringWithUTF8String(item_id));
+    }
+  }
+
+  // key 非空：重新 setKeyEquivalent + 显式 setKeyEquivalentModifierMask
+  //（initWithTitle 只设了主键、mask 默认 Command，这里补足自定义修饰键）。
+  // key 空串则保持无快捷键（initWithTitle 传了空串），不设 mask。
+  if (!key_str.empty()) {
+    objc::msg_send<void>(item, objc::selector("setKeyEquivalent:"),
+                         cocoa::NSString_stringWithUTF8String(key_str));
+    // mods 位映射到 NSEventModifierFlags（NSUInteger）：1=Command(1<<20)、
+    // 2=Shift(1<<17)、4=Option(1<<19)、8=Control(1<<18)，按位或。
+    unsigned long mask = 0;
+    if (mods & 1) {
+      mask |= 1UL << 20;
+    }
+    if (mods & 2) {
+      mask |= 1UL << 17;
+    }
+    if (mods & 4) {
+      mask |= 1UL << 19;
+    }
+    if (mods & 8) {
+      mask |= 1UL << 18;
+    }
+    objc::msg_send<void>(item, objc::selector("setKeyEquivalentModifierMask:"),
+                         static_cast<NSUInteger>(mask));
+  }
+
+  objc::msg_send<void>(m, objc::selector("addItem:"), item);
+#endif
+}
+
+void vtauri_mac_menu_add_separator(void *menu) {
+#if defined(WEBVIEW_PLATFORM_DARWIN)
+  if (menu == nullptr) {
+    return;
+  }
+  namespace objc = webview::detail::objc;
+
+  objc::autoreleasepool arp;
+
+  id m = static_cast<id>(menu);
+  objc::msg_send<void>(m, objc::selector("addItem:"),
+                       objc::msg_send<id>(objc::get_class("NSMenuItem"),
+                                          objc::selector("separatorItem")));
+#endif
+}
+
+void vtauri_mac_menubar_on_click(void *mb, vtauri_mac_tray_cb cb, void *userdata) {
+#if defined(WEBVIEW_PLATFORM_DARWIN)
+  if (mb == nullptr) {
+    return;
+  }
+  auto *handle = static_cast<VtauriTrayHandle *>(mb);
+  handle->cbctx.cb = cb;
+  handle->cbctx.userdata = userdata;
+#endif
+}
+
+void vtauri_mac_menubar_install(void *mb) {
+#if defined(WEBVIEW_PLATFORM_DARWIN)
+  if (mb == nullptr) {
+    return;
+  }
+  namespace objc = webview::detail::objc;
+  namespace cocoa = webview::detail::cocoa;
+
+  objc::autoreleasepool arp;
+
+  auto *handle = static_cast<VtauriTrayHandle *>(mb);
+  id menubar = static_cast<id>(handle->menu);
+  // 替换应用主菜单；被替换的默认菜单栏由 NSApplication 释放，无需手动处理。
+  objc::msg_send<void>(cocoa::NSApplication_get_sharedApplication(),
+                       objc::selector("setMainMenu:"), menubar);
 #endif
 }
 

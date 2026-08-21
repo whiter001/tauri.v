@@ -91,10 +91,56 @@ fn main() {
 		return
 	}
 
-	// 5b. 系统托盘：菜单栏右侧文本图标 + 菜单项。
+	// 5b. 自定义应用菜单栏：完全替换 build() 安装的默认菜单栏。
+	// 第一个菜单（App）的标题会被系统强制显示为应用名；动作项（action）走系统
+	// responder chain（撤销/剪切/复制…），自定义项（id）经回调回传。
+	app.set_menus([
+		vtauri.MenuDef{
+			title: 'App'
+			items: [
+				vtauri.MenuItemDef{ action: 'orderFrontStandardAboutPanel:', label: '关于 vtauri' }
+				vtauri.MenuItemDef{ separator: true }
+				vtauri.MenuItemDef{ id: 'quit', label: '退出 vtauri', key: 'q', mods: vtauri.mod_cmd }
+			]
+		}
+		vtauri.MenuDef{
+			title: '编辑'
+			items: [
+				vtauri.MenuItemDef{ action: 'undo:', label: '撤销', key: 'z', mods: vtauri.mod_cmd }
+				vtauri.MenuItemDef{ action: 'redo:', label: '重做', key: 'z', mods: vtauri.mod_cmd | vtauri.mod_shift }
+				vtauri.MenuItemDef{ separator: true }
+				vtauri.MenuItemDef{ action: 'cut:', label: '剪切', key: 'x', mods: vtauri.mod_cmd }
+				vtauri.MenuItemDef{ action: 'copy:', label: '拷贝', key: 'c', mods: vtauri.mod_cmd }
+				vtauri.MenuItemDef{ action: 'paste:', label: '粘贴', key: 'v', mods: vtauri.mod_cmd }
+				vtauri.MenuItemDef{ action: 'selectAll:', label: '全选', key: 'a', mods: vtauri.mod_cmd }
+			]
+		}
+		vtauri.MenuDef{
+			title: '工具'
+			items: [
+				vtauri.MenuItemDef{ id: 'demo.notify', label: '发送通知' }
+				vtauri.MenuItemDef{ id: 'demo.open', label: '打开 vlang.io' }
+			]
+		}
+	], fn [mut app] (id string) {
+		match id {
+			'quit' { app.quit() }
+			'demo.notify' { vtauri.notify('vtauri hello', '来自应用菜单') or { eprintln('notify failed: ${err}') } }
+			'demo.open' { vtauri.shell_open('https://vlang.io') or { eprintln('open failed: ${err}') } }
+			else {}
+		}
+	})
+
+	// 5c. 系统托盘：菜单栏右侧文本图标 + 菜单项。
 	// 回调闭包用 [mut app] 捕获 app 的可变拷贝（V 闭包捕获按值拷贝，
 	// app.quit() 通过拷贝里的 webview 原生句柄同样能终止事件循环）。
 	mut tray := vtauri.new_tray('VT') or { panic(err) }
+	// 图片图标：36x36 PNG（examples/hello/tray_icon.png，template 渲染）。
+	// 直接跑二进制时 cwd 为项目根，相对路径可解析；打包后 cwd 不确定，
+	// 加载失败时 or {} 容忍（托盘回退为文本图标）。
+	tray.set_icon('examples/hello/tray_icon.png') or {
+		eprintln('tray.set_icon failed: ${err}')
+	}
 	tray.add_item('about', '关于 vtauri')
 	tray.add_item('quit', '退出')
 	tray.on_menu_click(fn [mut app] (id string) {

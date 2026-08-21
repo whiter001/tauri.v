@@ -90,6 +90,37 @@ void vtauri_mac_tray_add_item(void *tray, const char *id, const char *label);
 /* 注册托盘菜单项点击回调。 */
 void vtauri_mac_tray_on_click(void *tray, vtauri_mac_tray_cb cb, void *userdata);
 
+/* 设置托盘图片图标（NSStatusItem button 的 image）。path 为 PNG 文件路径。
+ * 图片按 18x18 点阵缩放，并以 template 模式渲染（自适应菜单栏明暗，自动去色），
+ * 同时清空按钮文本。返回 0 成功，1 失败（托盘为空或图片加载失败）。仅 macOS。 */
+int vtauri_mac_tray_set_icon(void *tray, const char *path);
+
+/* 创建自定义应用菜单栏（NSMenu，将作为 NSApp 主菜单，完全替换默认菜单栏）。
+ * 返回菜单栏句柄（供 add_menu / menu_add_item / on_click / install 使用）。
+ * 仅 macOS 实现；非 macOS 返回 NULL。应在 NSApplication 创建后调用（build() 之后）。 */
+void *vtauri_mac_menubar_create(void);
+
+/* 往菜单栏追加一个顶级菜单（NSMenuItem+submenu），返回 submenu NSMenu*
+ *（供 menu_add_item / add_separator 使用）。 */
+void *vtauri_mac_menubar_add_menu(void *mb, const char *title);
+
+/* 往 menu 追加一个菜单项。
+ * id 为点击回调回传的标识（action 项忽略；id 与 action 二选一）；
+ * action 非空时走系统 selector（target=nil，经 responder chain 分发，如 copy:）；
+ * label 为显示文本；key 为快捷键主键（如 "q"，空串表示无）；mods 为修饰键位或：
+ * 1=Command、2=Shift、4=Option、8=Control。 */
+void vtauri_mac_menu_add_item(void *mb, void *menu, const char *id, const char *action,
+                              const char *label, const char *key, int mods);
+
+/* 往 menu 追加一条分隔线。 */
+void vtauri_mac_menu_add_separator(void *menu);
+
+/* 注册菜单栏自定义项点击回调（id 为 menu_add_item 时传入的标识；action 项不回传）。 */
+void vtauri_mac_menubar_on_click(void *mb, vtauri_mac_tray_cb cb, void *userdata);
+
+/* 把菜单栏安装为 NSApp 主菜单（替换默认菜单栏；应在所有 add_* 之后调用）。 */
+void vtauri_mac_menubar_install(void *mb);
+
 /* 写入纯文本到系统剪贴板（NSPasteboard generalPasteboard）。仅 macOS。 */
 void vtauri_mac_clipboard_write_text(const char *text);
 

@@ -13,6 +13,7 @@ module vtauri
 fn C.vtauri_mac_tray_create(title &char) voidptr
 fn C.vtauri_mac_tray_add_item(tray voidptr, id &char, label &char)
 fn C.vtauri_mac_tray_on_click(tray voidptr, cb fn (&char, voidptr), userdata voidptr)
+fn C.vtauri_mac_tray_set_icon(tray voidptr, path &char) int
 
 // new_tray_darwin 创建系统托盘图标（菜单栏右侧文本）。
 // 桥侧返回 NULL 表示失败（如 NSApp 尚未创建），此处转为错误。
@@ -42,4 +43,13 @@ fn (mut t Tray) on_menu_click_darwin(cb fn (id string)) {
 	}
 	t.ctx = ctx
 	C.vtauri_mac_tray_on_click(t.native, vtauri_on_tray_click, voidptr(ctx))
+}
+
+// set_icon_darwin 设置托盘图片图标（PNG 路径，template 渲染）；桥侧返回 0 成功，
+// 非 0（托盘为空或图片加载失败）转为错误。
+fn (mut t Tray) set_icon_darwin(path string) ! {
+	code := C.vtauri_mac_tray_set_icon(t.native, &char(path.str))
+	if code != 0 {
+		return error('vtauri_mac_tray_set_icon failed: ${path}')
+	}
 }

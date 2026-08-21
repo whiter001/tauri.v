@@ -60,3 +60,15 @@ pub fn (mut t Tray) on_menu_click(cb fn (id string)) {
 		t.on_menu_click_darwin(cb)
 	}
 }
+
+// set_icon 设置托盘图片图标（macOS：PNG 文件路径，template 模式渲染，
+// 自适应菜单栏明暗并自动去色）。失败返回错误（托盘为空或图片加载失败）。
+pub fn (mut t Tray) set_icon(path string) ! {
+	if isnil(t.native) {
+		eprintln('tray.set_icon: ${path} (tray not supported)')
+		return
+	}
+	$if macos {
+		t.set_icon_darwin(path)!
+	}
+}

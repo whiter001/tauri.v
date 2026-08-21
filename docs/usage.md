@@ -427,13 +427,17 @@ var result = await window.__VTauri.invoke('dialog_open', '');
 对应 Tauri 的 `tray icon` / SystemTray，vtauri 提供菜单栏托盘图标与菜单项点击回调
 （仅 macOS 实现，其他平台为桩：打印提示并返回空 `Tray`，保证跨平台编译），实现在
 `vtauri/tray.v` / `vtauri/tray_darwin.v`，由桥接层 `native/webview_bridge.cc`
-驱动 AppKit 的 `NSStatusItem`（菜单栏右侧文本图标）：
+驱动 AppKit 的 `NSStatusItem`（菜单栏右侧图标，默认文本，可用 `set_icon` 换为图片）：
 
 ```v
 import vtauri
 
 // 创建托盘图标（须在 app.build() 之后、app.run() 之前）
 mut tray := vtauri.new_tray('VT')!
+// 换为图片图标：PNG 文件路径（18x18 template 渲染，自适应菜单栏明暗；加载失败返回错误）
+tray.set_icon('examples/hello/tray_icon.png') or {
+	eprintln('tray.set_icon failed: ${err}')
+}
 tray.add_item('about', '关于 vtauri')
 tray.add_item('quit', '退出')
 
@@ -452,6 +456,7 @@ tray.on_menu_click(fn [mut app] (id string) {
 | API | 说明 |
 |-----|------|
 | `new_tray(title) !` | 创建托盘图标，`title` 为菜单栏显示文本（emoji 可用）；失败返回错误 |
+| `set_icon(path) !` | 用 PNG 文件替换为图片图标（18x18 template 模式渲染，自适应菜单栏明暗并自动去色）；托盘为空或图片加载失败返回错误 |
 | `add_item(id, label)` | 添加菜单项，`id` 在点击回调中原样回传 |
 | `on_menu_click(fn (id string))` | 注册菜单项点击回调，须在 `app.run()` 之前调用 |
 
@@ -460,12 +465,13 @@ tray.on_menu_click(fn [mut app] (id string) {
 
 限制：
 
-- 托盘图标目前是文本（`new_tray` 的 `title`），图片图标未做；
+- 托盘图标默认是文本（`new_tray` 的 `title`），需要图片时用 `set_icon` 传入 PNG（template 模式渲染）；
 - 菜单栏拥挤的刘海屏 Mac 上，托盘图标可能被系统隐藏（图标过多时 macOS 行为，非 bug）；
 - 需在 `app.build()` 之后创建托盘，因为 NSStatusItem 依赖 NSApplication 已存在；
 - 左键事件、多托盘未做。
 
-真机验证结果：System Events 确认 menu bar 2 出现「VT」托盘项；点开菜单显示「关于 vtauri / 退出」；
+真机验证结果：`set_icon` 后菜单栏显示 `examples/hello/tray_icon.png` 图片图标（浅色 / 深色菜单栏均正常渲染）；
+System Events 确认菜单栏出现托盘项；点开菜单显示「关于 vtauri / 退出」；
 点击「退出」进程正常退出（动态类回调 → V 闭包 → app.quit() 全链路）。
 
 ## 10. 系统通知 / 剪贴板 / shell open
@@ -538,7 +544,77 @@ var result = await window.__VTauri.invoke('clip_read', '');
 
 真机验证结果：通知横幅弹出；剪贴板写入后读取返回相同文本；`open_url` 用默认浏览器打开 vlang.io。
 
-## 11. 架构对应
+## 11. 自定义菜单栏
+
+对应 Tauri 的 `Menu` / `Submenu` API，vtauri 用 `app.set_menus(menus, cb)` 完全替换应用菜单栏
+（仅 macOS 实现，其他平台为桩：打印提示；须在 `app.build()` 之后调用），实现在
+`vtauri/menu.v` / `vtauri/menu_darwin.v`，由桥接层 `native/webview_bridge.cc`
+驱动 AppKit 的 `NSMenu` 主菜单栏：
+
+```v
+import vtauri
+
+// 完全替换应用菜单栏（须在 app.build() 之后调用）
+app.set_menus([
+	vtauri.MenuDef{
+		title: 'App'
+		items: [
+			vtauri.MenuItemDef{ action: 'orderFrontStandardAboutPanel:', label: '关于 vtauri' }
+			vtauri.MenuItemDef{ separator: true }
+			vtauri.MenuItemDef{ id: 'quit', label: '退出 vtauri', key: 'q', mods: vtauri.mod_cmd }
+		]
+	}
+	vtauri.MenuDef{
+		title: '编辑'
+		items: [
+			vtauri.MenuItemDef{ action: 'copy:', label: '拷贝', key: 'c', mods: vtauri.mod_cmd }
+			vtauri.MenuItemDef{ action: 'paste:', label: '粘贴', key: 'v', mods: vtauri.mod_cmd }
+		]
+	}
+	vtauri.MenuDef{
+		title: '工具'
+		items: [
+			vtauri.MenuItemDef{ id: 'demo.notify', label: '发送通知' }
+			vtauri.MenuItemDef{ id: 'demo.open', label: '打开 vlang.io' }
+		]
+	}
+], fn [mut app] (id string) {
+	match id {
+		'quit' { app.quit() }
+		'demo.notify' { vtauri.notify('vtauri hello', '来自应用菜单') or { eprintln('notify failed: ${err}') } }
+		'demo.open' { vtauri.shell_open('https://vlang.io') or { eprintln('open failed: ${err}') } }
+		else {}
+	}
+})
+```
+
+API 一览：
+
+| API | 说明 |
+|-----|------|
+| `set_menus(menus []MenuDef, cb fn (id string))` | 完全替换应用菜单栏，须在 `app.build()` 之后调用；点击自定义项时 `cb` 收到该项 `id`，action 项不回传 |
+| `MenuDef{title, items}` | 一个顶级菜单：`title` 为菜单标题，`items` 为该菜单下的菜单项列表 |
+| `MenuItemDef{id, action, label, key, mods, separator}` | 单个菜单项（字段语义见下） |
+
+`MenuItemDef` 字段语义：
+
+- `id` 非空 → 自定义项，点击时 `cb` 收到该 `id`；
+- `action` 非空（如 `'copy:'`、`'orderFrontStandardAboutPanel:'`）→ 系统 ObjC selector 项，
+  `target=nil` 走 responder chain，点击不回传回调；
+- `key` + `mods` 设置快捷键：`key` 为按键字符（如 `'q'`），`mods` 用
+  `vtauri.mod_cmd` / `mod_shift` / `mod_alt` / `mod_ctrl` 位或组合；
+- `separator=true` 插入分隔线，忽略其它字段。
+
+> **已知行为**：macOS 强制把第一个顶级菜单的标题显示为应用名（App 菜单约定），
+> 但该菜单仍须在 `set_menus` 中显式声明，否则应用名菜单缺失。
+
+`examples/hello` 演示了完整用法：App 菜单（关于 / 退出 Cmd+Q）、编辑（撤销 / 重做 / 剪切 / 拷贝 / 粘贴 / 全选）、
+工具（发送通知 / 打开 vlang.io），回调里 `quit` → `app.quit()`、`demo.notify` → 通知横幅、`demo.open` → 默认浏览器打开网页。
+
+真机验证结果：应用菜单栏被完全替换为自定义菜单；第一个菜单标题显示为应用名；Cmd+Q 退出生效；
+编辑菜单的撤销 / 剪切 / 拷贝 / 粘贴等系统 action 走 responder chain 正常工作；工具菜单点击触发通知横幅与打开网页。
+
+## 12. 架构对应
 
 | Tauri 组件 | vtauri 对应 | 说明 |
 |-----------|------------|------|
@@ -549,7 +625,7 @@ var result = await window.__VTauri.invoke('clip_read', '');
 | `tauri.conf.json` | `vtauri/config.v` | 应用配置解析 |
 | `@tauri-apps/api` | `js/vtauri.js` | 前端 `invoke` / `listen` / `emit` |
 
-## 12. 常见问题（FAQ）
+## 13. 常见问题（FAQ）
 
 ### Q1: `v run main.v` 报 `bad module definition: v imports module "vtauri"...`
 
